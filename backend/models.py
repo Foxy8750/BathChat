@@ -28,6 +28,7 @@ class Profile(Base):
     interests: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     societies: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     elo_score: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
+    course: Mapped[str | None] = mapped_column(String(120), nullable=True)
     badge_tier: Mapped[str] = mapped_column(String(40), default="bronze", nullable=False)
     goals: Mapped[str | None] = mapped_column(Text, nullable=True)
     vibe_tags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
@@ -42,7 +43,6 @@ class Match(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user1_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     user2_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    match_score: Mapped[float] = mapped_column(Float, nullable=False)
     ai_reason: Mapped[str] = mapped_column(Text, nullable=False)
     ai_icebreaker: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="suggested", nullable=False)
@@ -58,13 +58,15 @@ class EloLog(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="elo_logs")
-    
 
+    
 class Chat(Base):
     __tablename__ = "chats"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True)
+    user1_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user2_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="chat", cascade="all, delete-orphan")
 
@@ -78,3 +80,4 @@ class Message(Base):
     message_type: Mapped[str] = mapped_column(String(40), nullable=False)
     sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     
+    chat: Mapped["Chat"] = relationship(back_populates="messages")
