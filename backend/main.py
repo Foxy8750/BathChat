@@ -74,24 +74,56 @@ TERM_SYNONYMS = {
     "maths": "mathematics",
     "mathematics": "mathematics",
     "comp sci": "computer science",
+    "comp science": "computer science",
     "cs": "computer science",
+    "computer science": "computer science",
     "ai": "artificial intelligence",
+    "artificial intelligence": "artificial intelligence",
     "ml": "machine learning",
+    "machine learning": "machine learning",
     "gym": "fitness",
     "workout": "fitness",
+    "exercise": "fitness",
+    "fitness": "fitness",
     "uni": "university",
+    "university": "university",
+    "tech": "technology",
+    "technology": "technology",
+    "prog": "programming",
+    "programming": "programming",
 }
 
 
 def canonicalize_term(value: str | None) -> str:
+    """Canonicalize a term by lowercasing, removing punctuation, and applying synonym mapping.
+    
+    Also handles multi-word terms by canonicalizing each word and rejoining.
+    """
     if not value:
         return ""
+    
+    # Normalize: lowercase, remove special chars, collapse whitespace
     normalized = re.sub(r"[^a-z0-9\s]", " ", value.strip().lower())
     normalized = re.sub(r"\s+", " ", normalized).strip()
-    return TERM_SYNONYMS.get(normalized, normalized)
+    
+    # Check if the entire term is in synonyms first
+    if normalized in TERM_SYNONYMS:
+        return TERM_SYNONYMS[normalized]
+    
+    # Try canonicalizing individual words and rebuilding
+    words = normalized.split()
+    canonical_words = [TERM_SYNONYMS.get(w, w) for w in words if w]
+    
+    if canonical_words:
+        result = " ".join(canonical_words)
+        # Return mapped version if the whole phrase has a mapping
+        return TERM_SYNONYMS.get(result, result)
+    
+    return normalized
 
 
 def normalized_set(values: list[str] | None) -> set[str]:
+    """Convert a list of terms to a set of canonicalized terms."""
     if not values:
         return set()
     return {term for term in (canonicalize_term(v) for v in values) if term}
@@ -167,15 +199,49 @@ async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> A
     interests_2 = normalized_set(user2_profile.interests)
     societies_1 = normalized_set(user1_profile.societies)
     societies_2 = normalized_set(user2_profile.societies)
+    
     shared_interests = len(interests_1 & interests_2)
     shared_societies = len(societies_1 & societies_2)
+    
     course_1 = canonicalize_term(user1_profile.course)
     course_2 = canonicalize_term(user2_profile.course)
     same_course = bool(course_1 and course_2 and course_1 == course_2)
-    raw_score = 35 + (shared_interests * 8) + (shared_societies * 10) + (10 if same_course else 0)
-    score = max(0.0, min(100.0, float(raw_score)))
-    course_note = " and the same course" if same_course else ""
-    reason = f"You share {shared_interests} interests and {shared_societies} societies{course_note}, suggesting strong compatibility."
+    
+    # Base score: start at 20 (not 35) to let actual matches earn their score
+    score = 20
+    
+    # Interests: +15 per shared interest (strong signal)
+    score += shared_interests * 15
+    
+    # Societies: +12 per shared society (also strong)
+    score += shared_societies * 12
+    
+    # Same course: +25 (very strong signal)
+    if same_course:
+        score += 25
+    
+    # Bonus for overlap: if they share 3+ items across all fields, add 10 points
+    total_overlaps = shared_interests + shared_societies + (1 if same_course else 0)
+    if total_overlaps >= 3:
+        score += 10
+    
+    # Ensure score is in valid range [0, 100]
+    score = max(0, min(100, score))
+    
+    # Generate descriptive reason
+    reason_parts = []
+    if shared_interests > 0:
+        reason_parts.append(f"{shared_interests} shared interest{'s' if shared_interests != 1 else ''}")
+    if shared_societies > 0:
+        reason_parts.append(f"{shared_societies} shared societ{'ies' if shared_societies != 1 else 'y'}")
+    if same_course:
+        reason_parts.append("same course")
+    
+    if reason_parts:
+        reason = f"You both have {', '.join(reason_parts)}! Great foundation for connecting."
+    else:
+        reason = "Check out each other's profiles - you might discover common ground!"
+    
     icebreaker = "You both seem aligned. Want to swap your favorite student event this term?"
     return AIMatchData(match_score=score, reason=reason, icebreaker=icebreaker)
 
@@ -184,26 +250,34 @@ async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> A
 async def on_startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Add profile fields to profiles table (not to users - they have elo_score and badge_tier in User model)
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS course VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS accommodation VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ethnicity VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS gender VARCHAR(60)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spoken_language VARCHAR(120)"))
-        await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS elo_score INTEGER"))
-        await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS badge_tier VARCHAR(40)"))
+        # Ensure users table has elo_score and badge_tier (defined in User model)
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS elo_score INTEGER NOT NULL DEFAULT 500"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS badge_tier VARCHAR(40) NOT NULL DEFAULT 'bronze'"))
-        await conn.execute(
-            text(
-                """
-                UPDATE users u
-                SET elo_score = COALESCE(p.elo_score, u.elo_score),
-                    badge_tier = COALESCE(p.badge_tier, u.badge_tier)
-                FROM profiles p
-                WHERE p.user_id = u.id
-                """
-            )
-        )
+
+@app.post("/auth/login")
+async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
+    print(f"DEBUG: Login attempt for email: '{payload.email}'") # Check for hidden spaces
+
+    result = await db.execute(select(User).where(User.email == payload.email.strip().lower()))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        print("DEBUG: User NOT found in database.") # Error 1: Email is wrong
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not verify_password(payload.password, user.hashed_password):
+        print(f"DEBUG: Password mismatch for user {user.email}") # Error 2: Hashing is wrong
+        print(f"DEBUG: Received password: {payload.password}")
+        print(f"DEBUG: Stored hash: {user.hashed_password}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    return TokenResponse(access_token=f"user-{user.id}")
 
 
 @app.post("/auth/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -223,15 +297,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)) -> U
     return UserRead.model_validate(user)
 
 
-@app.post("/auth/login", response_model=TokenResponse)
-async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    result = await db.execute(select(User).where(User.email == payload.email.strip().lower()))
-    user = result.scalar_one_or_none()
-    if not user or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    # Placeholder token format for quick integration in hackathon environments.
-    return TokenResponse(access_token=f"user-{user.id}")
 
 
 @app.get("/auth/me", response_model=UserRead)
