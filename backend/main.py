@@ -2,8 +2,8 @@ import hashlib
 import hmac
 import json
 import os
-import re
 import secrets
+from difflib import SequenceMatcher
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, status
@@ -68,65 +68,78 @@ async def get_current_user(
     return user
 
 
-# Canonical aliases for common shorthand/variants used by students.
-TERM_SYNONYMS = {
-    "math": "mathematics",
-    "maths": "mathematics",
-    "mathematics": "mathematics",
-    "comp sci": "computer science",
-    "comp science": "computer science",
-    "cs": "computer science",
-    "computer science": "computer science",
-    "ai": "artificial intelligence",
-    "artificial intelligence": "artificial intelligence",
-    "ml": "machine learning",
-    "machine learning": "machine learning",
-    "gym": "fitness",
-    "workout": "fitness",
-    "exercise": "fitness",
-    "fitness": "fitness",
-    "uni": "university",
-    "university": "university",
-    "tech": "technology",
-    "technology": "technology",
-    "prog": "programming",
-    "programming": "programming",
-}
+_embedding_model = None
+_sentence_transformers_ready = True
 
 
-def canonicalize_term(value: str | None) -> str:
-    """Canonicalize a term by lowercasing, removing punctuation, and applying synonym mapping.
-    
-    Also handles multi-word terms by canonicalizing each word and rejoining.
-    """
+def get_embedding_model():
+    global _embedding_model, _sentence_transformers_ready
+    if not _sentence_transformers_ready:
+        return None
+    if _embedding_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ModuleNotFoundError:
+            _sentence_transformers_ready = False
+            return None
+        # Compact model with good semantic performance for short profile terms.
+        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _embedding_model
+
+
+def normalize_exact_value(value: str | None) -> str:
     if not value:
         return ""
-    
-    # Normalize: lowercase, remove special chars, collapse whitespace
-    normalized = re.sub(r"[^a-z0-9\s]", " ", value.strip().lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    
-    # Check if the entire term is in synonyms first
-    if normalized in TERM_SYNONYMS:
-        return TERM_SYNONYMS[normalized]
-    
-    # Try canonicalizing individual words and rebuilding
-    words = normalized.split()
-    canonical_words = [TERM_SYNONYMS.get(w, w) for w in words if w]
-    
-    if canonical_words:
-        result = " ".join(canonical_words)
-        # Return mapped version if the whole phrase has a mapping
-        return TERM_SYNONYMS.get(result, result)
-    
-    return normalized
+    return " ".join(value.strip().lower().split())
 
 
-def normalized_set(values: list[str] | None) -> set[str]:
-    """Convert a list of terms to a set of canonicalized terms."""
-    if not values:
-        return set()
-    return {term for term in (canonicalize_term(v) for v in values) if term}
+def exact_overlap_count(items_a: list[str] | None, items_b: list[str] | None) -> int:
+    set_a = {normalize_exact_value(v) for v in (items_a or []) if isinstance(v, str) and normalize_exact_value(v)}
+    set_b = {normalize_exact_value(v) for v in (items_b or []) if isinstance(v, str) and normalize_exact_value(v)}
+    return len(set_a & set_b)
+
+
+def semantic_text_similarity(text_a: str | None, text_b: str | None) -> float:
+    if not text_a or not text_b:
+        return 0.0
+    model = get_embedding_model()
+    if model is None:
+        return SequenceMatcher(None, text_a.strip().lower(), text_b.strip().lower()).ratio()
+    from sentence_transformers import util as st_util
+    vectors = model.encode([text_a.strip(), text_b.strip()], convert_to_tensor=True)
+    similarity = float(st_util.cos_sim(vectors[0], vectors[1]).item())
+    return max(0.0, min(1.0, similarity))
+
+
+def semantic_list_similarity(items_a: list[str] | None, items_b: list[str] | None) -> float:
+    values_a = [v.strip() for v in (items_a or []) if isinstance(v, str) and v.strip()]
+    values_b = [v.strip() for v in (items_b or []) if isinstance(v, str) and v.strip()]
+    if not values_a or not values_b:
+        return 0.0
+
+    model = get_embedding_model()
+    if model is None:
+        best_a = [max(SequenceMatcher(None, a.lower(), b.lower()).ratio() for b in values_b) for a in values_a]
+        best_b = [max(SequenceMatcher(None, b.lower(), a.lower()).ratio() for a in values_a) for b in values_b]
+        score = ((sum(best_a) / len(best_a)) + (sum(best_b) / len(best_b))) / 2.0
+        return max(0.0, min(1.0, score))
+    from sentence_transformers import util as st_util
+    emb_a = model.encode(values_a, convert_to_tensor=True)
+    emb_b = model.encode(values_b, convert_to_tensor=True)
+
+    # Pair each item with its best semantic counterpart and average both directions.
+    best_a_to_b: list[float] = []
+    for vec_a in emb_a:
+        best_a_to_b.append(max(float(st_util.cos_sim(vec_a, vec_b).item()) for vec_b in emb_b))
+
+    best_b_to_a: list[float] = []
+    for vec_b in emb_b:
+        best_b_to_a.append(max(float(st_util.cos_sim(vec_b, vec_a).item()) for vec_a in emb_a))
+
+    forward = sum(best_a_to_b) / len(best_a_to_b) if best_a_to_b else 0.0
+    backward = sum(best_b_to_a) / len(best_b_to_a) if best_b_to_a else 0.0
+    score = (forward + backward) / 2.0
+    return max(0.0, min(1.0, score))
 
 
 async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> AIMatchData:
@@ -193,55 +206,47 @@ async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> A
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
 
-    # Fallback scoring keeps local development deterministic when no API key is set.
-    # Use canonicalized comparisons so equivalent terms still match (e.g. maths/mathematics).
-    interests_1 = normalized_set(user1_profile.interests)
-    interests_2 = normalized_set(user2_profile.interests)
-    societies_1 = normalized_set(user1_profile.societies)
-    societies_2 = normalized_set(user2_profile.societies)
-    
-    shared_interests = len(interests_1 & interests_2)
-    shared_societies = len(societies_1 & societies_2)
-    
-    course_1 = canonicalize_term(user1_profile.course)
-    course_2 = canonicalize_term(user2_profile.course)
-    same_course = bool(course_1 and course_2 and course_1 == course_2)
-    
-    # Base score: start at 20 (not 35) to let actual matches earn their score
-    score = 20
-    
-    # Interests: +15 per shared interest (strong signal)
-    score += shared_interests * 15
-    
-    # Societies: +12 per shared society (also strong)
-    score += shared_societies * 12
-    
-    # Same course: +25 (very strong signal)
-    if same_course:
-        score += 25
-    
-    # Bonus for overlap: if they share 3+ items across all fields, add 10 points
-    total_overlaps = shared_interests + shared_societies + (1 if same_course else 0)
-    if total_overlaps >= 3:
-        score += 10
-    
-    # Ensure score is in valid range [0, 100]
-    score = max(0, min(100, score))
-    
-    # Generate descriptive reason
-    reason_parts = []
+    # Fallback scoring uses SentenceTransformer semantic similarity.
+    shared_interests = exact_overlap_count(user1_profile.interests, user2_profile.interests)
+    shared_societies = exact_overlap_count(user1_profile.societies, user2_profile.societies)
+
+    course_1 = normalize_exact_value(user1_profile.course)
+    course_2 = normalize_exact_value(user2_profile.course)
+    same_course_exact = bool(course_1 and course_2 and course_1 == course_2)
+
+    interests_similarity = semantic_list_similarity(user1_profile.interests, user2_profile.interests)
+    societies_similarity = semantic_list_similarity(user1_profile.societies, user2_profile.societies)
+    course_similarity = semantic_text_similarity(user1_profile.course, user2_profile.course)
+
+    score = (
+        15.0
+        + (interests_similarity * 45.0)
+        + (societies_similarity * 25.0)
+        + (course_similarity * 15.0)
+        + (shared_interests * 8.0)
+        + (shared_societies * 7.0)
+        + (10.0 if same_course_exact else 0.0)
+    )
+    score = max(0.0, min(100.0, score))
+
+    reason_parts: list[str] = []
     if shared_interests > 0:
-        reason_parts.append(f"{shared_interests} shared interest{'s' if shared_interests != 1 else ''}")
+        reason_parts.append(f"{shared_interests} common interest{'s' if shared_interests != 1 else ''}")
     if shared_societies > 0:
-        reason_parts.append(f"{shared_societies} shared societ{'ies' if shared_societies != 1 else 'y'}")
-    if same_course:
+        reason_parts.append(f"{shared_societies} common societ{'ies' if shared_societies != 1 else 'y'}")
+    if same_course_exact:
         reason_parts.append("same course")
-    
+
+    semantic_note = (
+        f"semantic similarity - interests: {int(interests_similarity * 100)}%, "
+        f"societies: {int(societies_similarity * 100)}%, course: {int(course_similarity * 100)}%"
+    )
+
     if reason_parts:
-        reason = f"You both have {', '.join(reason_parts)}! Great foundation for connecting."
+        reason = f"You have {', '.join(reason_parts)}; {semantic_note}."
     else:
-        reason = "Check out each other's profiles - you might discover common ground!"
-    
+        reason = f"No exact overlap found, but {semantic_note}."
+
     icebreaker = "You both seem aligned. Want to swap your favorite student event this term?"
     return AIMatchData(match_score=score, reason=reason, icebreaker=icebreaker)
 
@@ -398,21 +403,25 @@ async def discover_match(
         )
     )
     old_match = existing.scalar_one_or_none()
-    if old_match:
-        return MatchRead.model_validate(old_match)
-
     ai_data = await get_ai_match_data(user_profile, candidate_profile)
 
     user1_id, user2_id = sorted([current_user.id, candidate_id])
-    match = Match(
-        user1_id=user1_id,
-        user2_id=user2_id,
-        match_score=ai_data.match_score,
-        ai_reason=ai_data.reason,
-        ai_icebreaker=ai_data.icebreaker,
-        status="suggested",
-    )
-    db.add(match)
+    if old_match:
+        # Recompute and update existing match so profile edits are reflected immediately.
+        old_match.match_score = ai_data.match_score
+        old_match.ai_reason = ai_data.reason
+        old_match.ai_icebreaker = ai_data.icebreaker
+        match = old_match
+    else:
+        match = Match(
+            user1_id=user1_id,
+            user2_id=user2_id,
+            match_score=ai_data.match_score,
+            ai_reason=ai_data.reason,
+            ai_icebreaker=ai_data.icebreaker,
+            status="suggested",
+        )
+        db.add(match)
     await db.commit()
     await db.refresh(match)
     return MatchRead.model_validate(match)
