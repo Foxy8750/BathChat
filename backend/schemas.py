@@ -37,20 +37,26 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
-class ProfileBase(BaseModel):
+class ProfileUpsert(BaseModel):
     interests: list[str] = Field(default_factory=list)
+    course: str | None = Field(default=None, max_length=120)
+    accommodation: str | None = Field(default=None, max_length=120)
+    ethnicity: str | None = Field(default=None, max_length=120)
+    gender: str | None = Field(default=None, max_length=60)
+    spoken_language: str | None = Field(default=None, max_length=120)
     societies: list[str] = Field(default_factory=list)
     goals: str | None = None
-    vibe_tags: list[str] = Field(default_factory=list)
     bio: str | None = None
 
 
-class ProfileUpsert(ProfileBase):
+class ProfileBase(ProfileUpsert):
     pass
 
 
 class ProfileRead(ProfileBase):
     user_id: int
+    elo_score: int
+    badge_tier: str
 
     model_config = {"from_attributes": True}
 

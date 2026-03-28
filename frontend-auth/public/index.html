@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BathChat Auth</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Manrope:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero-panel">
+        <p class="eyebrow">BathChat</p>
+        <h1>Find your vibe. Start with a clean sign in.</h1>
+        <p class="hero-copy">
+          This page connects directly to your FastAPI backend so you can register and log in with
+          real data before wiring the full product.
+        </p>
+        <div class="status-card" id="session-card">
+          <p class="status-title">Session</p>
+          <p id="session-text">Not signed in</p>
+        </div>
+      </section>
+
+      <section class="auth-panel">
+        <form id="api-config-form" class="card card-config">
+          <h2>API Config</h2>
+          <label for="apiBaseUrl">Backend Base URL</label>
+          <input
+            id="apiBaseUrl"
+            name="apiBaseUrl"
+            type="url"
+            placeholder="https://your-backend.onrender.com"
+            required
+          />
+          <button type="submit">Save API URL</button>
+        </form>
+
+        <div class="tabs" role="tablist" aria-label="Auth tabs">
+          <button id="tab-signup" class="tab is-active" type="button">Sign Up</button>
+          <button id="tab-login" class="tab" type="button">Log In</button>
+        </div>
+
+        <form id="signup-form" class="card auth-form">
+          <h2>Create account</h2>
+          <label for="signupName">Full name</label>
+          <input id="signupName" name="name" type="text" placeholder="Alex Chen" required />
+
+          <label for="signupEmail">Bath email</label>
+          <input
+            id="signupEmail"
+            name="email"
+            type="email"
+            placeholder="name@bath.ac.uk"
+            required
+          />
+
+          <label for="signupPassword">Password</label>
+          <input
+            id="signupPassword"
+            name="password"
+            type="password"
+            minlength="8"
+            placeholder="At least 8 characters"
+            required
+          />
+
+          <button type="submit">Create Account</button>
+        </form>
+
+        <form id="login-form" class="card auth-form hidden">
+          <h2>Welcome back</h2>
+          <label for="loginEmail">Bath email</label>
+          <input
+            id="loginEmail"
+            name="email"
+            type="email"
+            placeholder="name@bath.ac.uk"
+            required
+          />
+
+          <label for="loginPassword">Password</label>
+          <input
+            id="loginPassword"
+            name="password"
+            type="password"
+            minlength="8"
+            placeholder="Your password"
+            required
+          />
+
+          <button type="submit">Log In</button>
+        </form>
+
+        <div class="card message-card" id="message-card" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>

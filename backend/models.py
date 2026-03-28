@@ -16,6 +16,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    elo_score: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
+    badge_tier: Mapped[str] = mapped_column(String(40), default="bronze", nullable=False)
 
     profile: Mapped["Profile"] = relationship(back_populates="user", uselist=False)
     elo_logs: Mapped[list["EloLog"]] = relationship(back_populates="user")
@@ -26,12 +28,13 @@ class Profile(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     interests: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
-    societies: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
-    elo_score: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
     course: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    badge_tier: Mapped[str] = mapped_column(String(40), default="bronze", nullable=False)
+    accommodation: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    ethnicity: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    spoken_language: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    societies: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     goals: Mapped[str | None] = mapped_column(Text, nullable=True)
-    vibe_tags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="profile")
@@ -43,6 +46,7 @@ class Match(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user1_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     user2_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    match_score: Mapped[float] = mapped_column(Float, nullable=False)
     ai_reason: Mapped[str] = mapped_column(Text, nullable=False)
     ai_icebreaker: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="suggested", nullable=False)
@@ -59,7 +63,6 @@ class EloLog(Base):
 
     user: Mapped["User"] = relationship(back_populates="elo_logs")
 
-    
 class Chat(Base):
     __tablename__ = "chats"
 
