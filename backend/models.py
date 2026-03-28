@@ -16,8 +16,6 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    elo_score: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
-    badge_tier: Mapped[str] = mapped_column(String(40), default="bronze", nullable=False)
 
     profile: Mapped["Profile"] = relationship(back_populates="user", uselist=False)
     elo_logs: Mapped[list["EloLog"]] = relationship(back_populates="user")
@@ -29,6 +27,8 @@ class Profile(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     interests: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     societies: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    elo_score: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
+    badge_tier: Mapped[str] = mapped_column(String(40), default="bronze", nullable=False)
     goals: Mapped[str | None] = mapped_column(Text, nullable=True)
     vibe_tags: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -58,3 +58,23 @@ class EloLog(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="elo_logs")
+    
+
+class Chat(Base):
+    __tablename__ = "chats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    messages: Mapped[list["Message"]] = relationship(back_populates="chat", cascade="all, delete-orphan")
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    chat_id: Mapped[int] = mapped_column(ForeignKey("chats.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    message_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    

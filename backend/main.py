@@ -14,7 +14,7 @@ from models import Match, Profile, User
 from schemas import AIMatchData, MatchRead, ProfileRead, ProfileUpsert, TokenResponse, UserCreate, UserLogin, UserRead
 
 
-app = FastAPI(title="SocialMatch AI API")
+app = FastAPI(title="BathChat API")
 
 
 def hash_password(password: str) -> str:
