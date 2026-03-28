@@ -6,4 +6,3 @@ httpx
 pydantic
 numpy
 scikit-learn
-sentence-transformers

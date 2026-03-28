@@ -14,7 +14,6 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     elo_score: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
     badge_tier: Mapped[str] = mapped_column(String(40), default="bronze", nullable=False)
@@ -27,6 +26,7 @@ class Profile(Base):
     __tablename__ = "profiles"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     interests: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     course: Mapped[str | None] = mapped_column(String(120), nullable=True)
     accommodation: Mapped[str | None] = mapped_column(String(120), nullable=True)

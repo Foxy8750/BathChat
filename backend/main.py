@@ -256,6 +256,7 @@ async def on_startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # Add profile fields to profiles table (not to users - they have elo_score and badge_tier in User model)
+        await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS name VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS course VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS accommodation VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ethnicity VARCHAR(120)"))
@@ -264,6 +265,17 @@ async def on_startup() -> None:
         # Ensure users table has elo_score and badge_tier (defined in User model)
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS elo_score INTEGER NOT NULL DEFAULT 500"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS badge_tier VARCHAR(40) NOT NULL DEFAULT 'bronze'"))
+        await conn.execute(
+            text(
+                """
+                UPDATE profiles p
+                SET name = u.name
+                FROM users u
+                WHERE p.user_id = u.id
+                  AND (p.name IS NULL OR p.name = '')
+                """
+            )
+        )
 
 @app.post("/auth/login")
 async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
@@ -293,21 +305,42 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)) -> U
 
     user = User(
         email=payload.email,
-        name=payload.name,
         hashed_password=hash_password(payload.password),
     )
     db.add(user)
+    await db.flush()
+
+    profile = Profile(user_id=user.id, name=payload.name)
+    db.add(profile)
+
     await db.commit()
     await db.refresh(user)
-    return UserRead.model_validate(user)
+    return UserRead(
+        id=user.id,
+        email=user.email,
+        name=payload.name,
+        elo_score=user.elo_score,
+        badge_tier=user.badge_tier,
+    )
 
 
 
 
 
 @app.get("/auth/me", response_model=UserRead)
-async def me(current_user: User = Depends(get_current_user)) -> UserRead:
-    return UserRead.model_validate(current_user)
+async def me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserRead:
+    profile = await db.get(Profile, current_user.id)
+    display_name = profile.name if profile and profile.name else ""
+    return UserRead(
+        id=current_user.id,
+        email=current_user.email,
+        name=display_name,
+        elo_score=current_user.elo_score,
+        badge_tier=current_user.badge_tier,
+    )
 
 
 @app.post("/profiles/me", response_model=ProfileRead)
@@ -321,6 +354,7 @@ async def upsert_my_profile(
         profile = Profile(user_id=current_user.id)
         db.add(profile)
 
+    profile.name = payload.name
     profile.interests = payload.interests
     profile.course = payload.course
     profile.accommodation = payload.accommodation
@@ -335,6 +369,7 @@ async def upsert_my_profile(
     await db.refresh(profile)
     return ProfileRead(
         user_id=profile.user_id,
+        name=profile.name,
         interests=profile.interests,
         course=profile.course,
         accommodation=profile.accommodation,
@@ -359,6 +394,7 @@ async def get_my_profile(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
     return ProfileRead(
         user_id=profile.user_id,
+        name=profile.name,
         interests=profile.interests,
         course=profile.course,
         accommodation=profile.accommodation,

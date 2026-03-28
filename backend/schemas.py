@@ -38,6 +38,7 @@ class TokenResponse(BaseModel):
 
 
 class ProfileUpsert(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
     interests: list[str] = Field(default_factory=list)
     course: str | None = Field(default=None, max_length=120)
     accommodation: str | None = Field(default=None, max_length=120)
