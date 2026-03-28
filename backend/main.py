@@ -4,16 +4,16 @@ import json
 import os
 import secrets
 from difflib import SequenceMatcher
-
 import httpx
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import Base, engine, get_db
-from models import Match, Profile, User
-from schemas import AIMatchData, MatchRead, ProfileRead, ProfileUpsert, TokenResponse, UserCreate, UserLogin, UserRead
+from backend.database import Base, engine, get_db
+from backend.models import Match, Profile, User
+from backend.schemas import AIMatchData, MatchRead, ProfileRead, ProfileUpsert, TokenResponse, UserCreate, UserLogin, UserRead, IcebreakerProfile, MatchRequest
 
 
 app = FastAPI(title="BathChat API")
@@ -473,3 +473,68 @@ async def list_my_matches(
     )
     matches = result.scalars().all()
     return [MatchRead.model_validate(item) for item in matches]
+
+
+
+
+
+import google.generativeai as genai
+load_dotenv()  # Load environment variables from .env file
+genai.configure(api_key=os.getenv("API_KEY"))
+
+model = genai.GenerativeModel("gemini-flash-latest")
+
+from google import genai
+import os
+
+client = genai.Client(api_key=os.getenv("API_KEY"))
+
+def generate_icebreaker(student_a: IcebreakerProfile, student_b: IcebreakerProfile) -> str:
+    prompt = f"""
+Two university students have been matched because they share similarities within their profiles for an app about reaching out and making new friends.
+
+Student A:
+{format_student_for_prompt(student_a)}
+
+Student B:
+{format_student_for_prompt(student_b)}
+
+Give THREE short, natural, potential icebreaker messages that:
+- feels like something a real student would actually send
+- references a shared interest where possible
+- is casual and friendly (not overly enthusiastic or cringey and NOT CREEPY)
+- does NOT assume anything personal beyond the given data
+- is at most 1–2 sentences
+
+Output only the message, nothing else.
+"""
+
+    response = client.models.generate_content(
+        model="gemini-flash-latest",
+        contents=prompt,
+    )
+    return response.text.strip()
+
+@app.post("/icebreaker/")
+def icebreaker(data: MatchRequest):
+    return {"message": generate_icebreaker(data.student_a, data.student_b)}
+
+def format_student_for_prompt(student: IcebreakerProfile) -> str:
+    parts = []
+
+    if student.name:
+        parts.append(f"Name: {student.name}")
+    if student.course:
+        parts.append(f"Course: {student.course}")
+    if student.interests:
+        parts.append(f"Interests: {', '.join(student.interests)}")
+    if student.spoken_language:
+        parts.append(f"Spoken language: {student.spoken_language}")
+    if student.societies:
+        parts.append(f"Societies: {', '.join(student.societies)}")
+    if student.goals:
+        parts.append(f"Goals: {student.goals}")
+    if student.bio:
+        parts.append(f"Bio: {student.bio}")
+
+    return "\n".join(parts)

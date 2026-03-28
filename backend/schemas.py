@@ -49,6 +49,19 @@ class ProfileUpsert(BaseModel):
     goals: str | None = None
     bio: str | None = None
 
+class IcebreakerProfile(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    interests: list[str] = Field(default_factory=list)
+    course: str | None = Field(default=None, max_length=120)
+    spoken_language: str | None = Field(default=None, max_length=120)
+    societies: list[str] = Field(default_factory=list)
+    goals: str | None = None
+    bio: str | None = None
+
+
+class MatchRequest(BaseModel):
+    student_a: IcebreakerProfile
+    student_b: IcebreakerProfile
 
 class ProfileBase(ProfileUpsert):
     pass

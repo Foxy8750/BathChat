@@ -15,3 +15,6 @@
 local.properties
 *.pyc
 __pycache__/
+.env
+localrequirements.txt
+/.venv
