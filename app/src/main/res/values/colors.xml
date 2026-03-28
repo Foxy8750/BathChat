@@ -3,5 +3,7 @@
     <color name="bright_blue">#14C8E1</color>
     <color name="deep_blue">#121a61</color>
     <color name="white">#FFFFFF</color>
-
+    <color name="blue_primary">#1565C0</color>
+    <color name="blue_light">#5B9BD5</color>
+    <color name="grey">#888888</color>
 </resources>
