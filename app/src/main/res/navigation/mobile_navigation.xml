@@ -3,23 +3,30 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/mobile_navigation"
-    app:startDestination="@+id/navigation_home">
+    app:startDestination="@+id/navigation_discover">
 
     <fragment
-        android:id="@+id/navigation_home"
-        android:name="com.example.bathchat.ui.home.HomeFragment"
-        android:label="@string/title_home"
-        tools:layout="@layout/fragment_home" />
+        android:id="@+id/navigation_discover"
+        android:name="com.example.bathchat.ui.discover.DiscoverFragment"
+        android:label="Find Matches"
+        tools:layout="@layout/discover" />
 
     <fragment
-        android:id="@+id/navigation_dashboard"
-        android:name="com.example.bathchat.ui.dashboard.DashboardFragment"
-        android:label="@string/title_dashboard"
-        tools:layout="@layout/fragment_dashboard" />
+        android:id="@+id/navigation_messages"
+        android:name="com.example.bathchat.ui.messages.MessagesFragment"
+        android:label="Chats &amp; Tasks"
+        tools:layout="@layout/messages" />
 
     <fragment
-        android:id="@+id/navigation_notifications"
-        android:name="com.example.bathchat.ui.notifications.NotificationsFragment"
-        android:label="@string/title_notifications"
-        tools:layout="@layout/fragment_notifications" />
+        android:id="@+id/navigation_community"
+        android:name="com.example.bathchat.ui.community.CommunityFragment"
+        android:label="Community Board"
+        tools:layout="@layout/community_board" />
+
+    <fragment
+        android:id="@+id/navigation_profile"
+        android:name="com.example.bathchat.ui.profile.ProfileFragment"
+        android:label="My Stats"
+        tools:layout="@layout/profile" />
+
 </navigation>
