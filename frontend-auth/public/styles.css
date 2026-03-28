@@ -1,0 +1,227 @@
+:root {
+  --bg-1: #f8f4ec;
+  --bg-2: #ffd8a8;
+  --ink-1: #2f1c1a;
+  --ink-2: #6b4f45;
+  --brand-1: #dd5d2b;
+  --brand-2: #b83d17;
+  --ok: #176b2d;
+  --error: #8f1e1e;
+  --card: rgba(255, 250, 242, 0.92);
+  --shadow: 0 20px 45px rgba(89, 40, 22, 0.16);
+  --radius: 20px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Manrope", sans-serif;
+  color: var(--ink-1);
+  background:
+    radial-gradient(circle at 15% 10%, #ffe4c2 0%, rgba(255, 228, 194, 0) 42%),
+    radial-gradient(circle at 82% 92%, #ffc68b 0%, rgba(255, 198, 139, 0) 48%),
+    linear-gradient(140deg, var(--bg-1), var(--bg-2));
+  min-height: 100vh;
+}
+
+.page-shell {
+  width: min(1080px, 92vw);
+  margin: 0 auto;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: center;
+  padding: 28px 0;
+}
+
+.hero-panel,
+.auth-panel {
+  animation: reveal 500ms ease both;
+}
+
+.hero-panel {
+  padding: 24px;
+}
+
+.eyebrow {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-2);
+  margin: 0 0 12px;
+}
+
+h1 {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  line-height: 1.03;
+  margin: 0;
+}
+
+.hero-copy {
+  margin-top: 16px;
+  max-width: 44ch;
+  color: var(--ink-2);
+  font-size: 1.03rem;
+  line-height: 1.5;
+}
+
+.status-card {
+  margin-top: 24px;
+  padding: 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(184, 61, 23, 0.18);
+}
+
+.status-title {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.auth-panel {
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  padding: 18px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 18px;
+  border: 1px solid rgba(184, 61, 23, 0.14);
+}
+
+.card + .card {
+  margin-top: 14px;
+}
+
+.card h2 {
+  margin: 0 0 12px;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.35rem;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.tab {
+  border: 1px solid rgba(184, 61, 23, 0.25);
+  border-radius: 999px;
+  padding: 10px;
+  background: #fff6eb;
+  color: var(--ink-1);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 130ms ease, background-color 130ms ease;
+}
+
+.tab:hover {
+  transform: translateY(-1px);
+}
+
+.tab.is-active {
+  background: linear-gradient(120deg, var(--brand-1), var(--brand-2));
+  color: #fff;
+  border-color: transparent;
+}
+
+label {
+  display: block;
+  font-size: 0.92rem;
+  margin-bottom: 6px;
+  color: var(--ink-2);
+}
+
+input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(107, 79, 69, 0.25);
+  background: rgba(255, 255, 255, 0.95);
+  padding: 11px;
+  margin-bottom: 11px;
+  font: inherit;
+  color: var(--ink-1);
+}
+
+input:focus {
+  outline: 2px solid rgba(221, 93, 43, 0.35);
+  border-color: rgba(221, 93, 43, 0.6);
+}
+
+button[type="submit"] {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 14px;
+  background: linear-gradient(120deg, var(--brand-1), var(--brand-2));
+  color: #fff;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+button[type="submit"]:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.hidden {
+  display: none;
+}
+
+.message-card {
+  min-height: 70px;
+  line-height: 1.4;
+  color: var(--ink-1);
+}
+
+.message-card.is-error {
+  border-color: rgba(143, 30, 30, 0.3);
+  color: var(--error);
+}
+
+.message-card.is-success {
+  border-color: rgba(23, 107, 45, 0.35);
+  color: var(--ok);
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 960px) {
+  .page-shell {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 20px 0;
+  }
+
+  .hero-panel {
+    padding: 10px;
+  }
+}

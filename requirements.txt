@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+asyncpg
+httpx
+pydantic
+numpy
+scikit-learn
+sentence-transformers
