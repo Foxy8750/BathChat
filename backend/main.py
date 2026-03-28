@@ -11,9 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import Base, engine, get_db
-from models import Match, Profile, User
-from schemas import AIMatchData, MatchRead, ProfileRead, ProfileUpsert, TokenResponse, UserCreate, UserLogin, UserRead
+from backend.database import Base, engine, get_db
+from backend.models import Match, Profile, User
+from backend.schemas import AIMatchData, MatchRead, ProfileRead, ProfileUpsert, TokenResponse, UserCreate, UserLogin, UserRead
 
 
 app = FastAPI(title="BathChat API")
