@@ -68,6 +68,16 @@ class AIMatchData(BaseModel):
     icebreaker: str
 
 
+class GameIdea(BaseModel):
+    game_type: str
+    ai_role: str
+    technical_execution: str
+
+
+class GameIdeasResponse(BaseModel):
+    games: list[GameIdea]
+
+
 class MatchRead(BaseModel):
     id: int
     user1_id: int
@@ -76,6 +86,29 @@ class MatchRead(BaseModel):
     ai_reason: str
     ai_icebreaker: str
     status: str
+
+    model_config = {"from_attributes": True}
+
+
+class ConnectionRead(BaseModel):
+    match_id: int
+    user_id: int
+    name: str
+    status: str
+
+
+class ChatMessageCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=2000)
+    message_type: str = Field(default="text", max_length=40)
+
+
+class ChatMessageRead(BaseModel):
+    id: int
+    chat_id: int
+    sender_id: int
+    content: str
+    message_type: str
+    sent_at: datetime
 
     model_config = {"from_attributes": True}
 

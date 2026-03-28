@@ -3,17 +3,33 @@ import hmac
 import json
 import os
 import secrets
-from difflib import SequenceMatcher
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import and_, delete, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import Base, engine, get_db
-from models import Match, Profile, User
-from schemas import AIMatchData, MatchRead, ProfileRead, ProfileUpsert, TokenResponse, UserCreate, UserLogin, UserRead
+from backend.database import Base, engine, get_db
+from backend.models import Chat, Match, Message, Profile, User
+from backend.schemas import (
+    AIMatchData,
+    ChatMessageCreate,
+    ChatMessageRead,
+    ConnectionRead,
+    GameIdea,
+    GameIdeasResponse,
+    MatchRead,
+    ProfileRead,
+    ProfileUpsert,
+    TokenResponse,
+    UserCreate,
+    UserLogin,
+    UserRead,
+)
+
+GEMINI_API_KEY = "AIzaSyDNvViMd10UcfDA01Mo0vF9ISXBZpsoIeQ"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 
 app = FastAPI(title="BathChat API")
@@ -68,23 +84,11 @@ async def get_current_user(
     return user
 
 
-_embedding_model = None
-_sentence_transformers_ready = True
-
-
-def get_embedding_model():
-    global _embedding_model, _sentence_transformers_ready
-    if not _sentence_transformers_ready:
-        return None
-    if _embedding_model is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ModuleNotFoundError:
-            _sentence_transformers_ready = False
-            return None
-        # Compact model with good semantic performance for short profile terms.
-        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedding_model
+# SentenceTransformer path intentionally disabled per request.
+# _embedding_model = None
+# _sentence_transformers_ready = True
+# def get_embedding_model():
+#     ...
 
 
 def normalize_exact_value(value: str | None) -> str:
@@ -99,56 +103,64 @@ def exact_overlap_count(items_a: list[str] | None, items_b: list[str] | None) ->
     return len(set_a & set_b)
 
 
-def semantic_text_similarity(text_a: str | None, text_b: str | None) -> float:
-    if not text_a or not text_b:
-        return 0.0
-    model = get_embedding_model()
-    if model is None:
-        return SequenceMatcher(None, text_a.strip().lower(), text_b.strip().lower()).ratio()
-    from sentence_transformers import util as st_util
-    vectors = model.encode([text_a.strip(), text_b.strip()], convert_to_tensor=True)
-    similarity = float(st_util.cos_sim(vectors[0], vectors[1]).item())
-    return max(0.0, min(1.0, similarity))
+def extract_json_payload(raw_text: str) -> dict:
+    stripped = raw_text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`")
+        if stripped.startswith("json"):
+            stripped = stripped[4:].strip()
+
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(stripped[start : end + 1])
+        raise
 
 
-def semantic_list_similarity(items_a: list[str] | None, items_b: list[str] | None) -> float:
-    values_a = [v.strip() for v in (items_a or []) if isinstance(v, str) and v.strip()]
-    values_b = [v.strip() for v in (items_b or []) if isinstance(v, str) and v.strip()]
-    if not values_a or not values_b:
-        return 0.0
+async def call_gemini_json(prompt: str, fallback: dict) -> dict:
+    if not GEMINI_API_KEY:
+        return fallback
 
-    model = get_embedding_model()
-    if model is None:
-        best_a = [max(SequenceMatcher(None, a.lower(), b.lower()).ratio() for b in values_b) for a in values_a]
-        best_b = [max(SequenceMatcher(None, b.lower(), a.lower()).ratio() for a in values_a) for b in values_b]
-        score = ((sum(best_a) / len(best_a)) + (sum(best_b) / len(best_b))) / 2.0
-        return max(0.0, min(1.0, score))
-    from sentence_transformers import util as st_util
-    emb_a = model.encode(values_a, convert_to_tensor=True)
-    emb_b = model.encode(values_b, convert_to_tensor=True)
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+        f"?key={GEMINI_API_KEY}"
+    )
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "responseMimeType": "application/json",
+        },
+    }
 
-    # Pair each item with its best semantic counterpart and average both directions.
-    best_a_to_b: list[float] = []
-    for vec_a in emb_a:
-        best_a_to_b.append(max(float(st_util.cos_sim(vec_a, vec_b).item()) for vec_b in emb_b))
-
-    best_b_to_a: list[float] = []
-    for vec_b in emb_b:
-        best_b_to_a.append(max(float(st_util.cos_sim(vec_b, vec_a).item()) for vec_a in emb_a))
-
-    forward = sum(best_a_to_b) / len(best_a_to_b) if best_a_to_b else 0.0
-    backward = sum(best_b_to_a) / len(best_b_to_a) if best_b_to_a else 0.0
-    score = (forward + backward) / 2.0
-    return max(0.0, min(1.0, score))
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            text_part = (
+                data.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+            )
+            if not text_part:
+                return fallback
+            parsed = extract_json_payload(text_part)
+            return parsed if isinstance(parsed, dict) else fallback
+    except Exception:
+        return fallback
 
 
 async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> AIMatchData:
-    """Placeholder Anthropic integration returning match score, reason, and icebreaker."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+    """Gemini-powered match scoring."""
 
     prompt = {
         "user1": {
+            "name": user1_profile.name,
             "interests": user1_profile.interests,
             "course": user1_profile.course,
             "accommodation": user1_profile.accommodation,
@@ -160,6 +172,7 @@ async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> A
             "bio": user1_profile.bio,
         },
         "user2": {
+            "name": user2_profile.name,
             "interests": user2_profile.interests,
             "course": user2_profile.course,
             "accommodation": user2_profile.accommodation,
@@ -172,41 +185,29 @@ async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> A
         },
     }
 
-    if api_key:
-        headers = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
-        payload = {
-            "model": model,
-            "max_tokens": 300,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "Return ONLY valid JSON with keys: match_score (0-100), reason, icebreaker. "
-                        f"Input profiles: {json.dumps(prompt)}"
-                    ),
-                }
-            ],
-        }
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            text = data.get("content", [{}])[0].get("text", "{}")
-            try:
-                parsed = json.loads(text)
-                return AIMatchData(
-                    match_score=float(parsed.get("match_score", 50.0)),
-                    reason=str(parsed.get("reason", "Shared university interests and compatible social goals.")),
-                    icebreaker=str(parsed.get("icebreaker", "What is one Bath campus spot you would both recommend?")),
-                )
-            except (json.JSONDecodeError, TypeError, ValueError):
-                pass
+    fallback = {
+        "match_score": 50.0,
+        "reason": "Shared university interests and compatible social goals.",
+        "icebreaker": "What is one Bath campus spot you would both recommend?",
+    }
 
-    # Fallback scoring uses SentenceTransformer semantic similarity.
+    gemini_prompt = (
+        "Return ONLY valid JSON object with keys: match_score (0-100 number), reason (string), "
+        "icebreaker (string). Use profile compatibility based on interests, course, societies, goals and bio. "
+        f"Input profiles: {json.dumps(prompt)}"
+    )
+    parsed = await call_gemini_json(gemini_prompt, fallback)
+
+    try:
+        return AIMatchData(
+            match_score=float(parsed.get("match_score", fallback["match_score"])),
+            reason=str(parsed.get("reason", fallback["reason"])),
+            icebreaker=str(parsed.get("icebreaker", fallback["icebreaker"])),
+        )
+    except (TypeError, ValueError):
+        pass
+
+    # Deterministic fallback if Gemini output is malformed or unavailable.
     shared_interests = exact_overlap_count(user1_profile.interests, user2_profile.interests)
     shared_societies = exact_overlap_count(user1_profile.societies, user2_profile.societies)
 
@@ -214,15 +215,10 @@ async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> A
     course_2 = normalize_exact_value(user2_profile.course)
     same_course_exact = bool(course_1 and course_2 and course_1 == course_2)
 
-    interests_similarity = semantic_list_similarity(user1_profile.interests, user2_profile.interests)
-    societies_similarity = semantic_list_similarity(user1_profile.societies, user2_profile.societies)
-    course_similarity = semantic_text_similarity(user1_profile.course, user2_profile.course)
-
     score = (
         15.0
-        + (interests_similarity * 45.0)
-        + (societies_similarity * 25.0)
-        + (course_similarity * 15.0)
+        + (shared_interests * 12.0)
+        + (shared_societies * 10.0)
         + (shared_interests * 8.0)
         + (shared_societies * 7.0)
         + (10.0 if same_course_exact else 0.0)
@@ -237,18 +233,262 @@ async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> A
     if same_course_exact:
         reason_parts.append("same course")
 
-    semantic_note = (
-        f"semantic similarity - interests: {int(interests_similarity * 100)}%, "
-        f"societies: {int(societies_similarity * 100)}%, course: {int(course_similarity * 100)}%"
-    )
-
     if reason_parts:
-        reason = f"You have {', '.join(reason_parts)}; {semantic_note}."
+        reason = f"You have {', '.join(reason_parts)}."
     else:
-        reason = f"No exact overlap found, but {semantic_note}."
+        reason = "No exact overlap found yet, but there is still a chance to connect."
 
     icebreaker = "You both seem aligned. Want to swap your favorite student event this term?"
     return AIMatchData(match_score=score, reason=reason, icebreaker=icebreaker)
+
+
+@app.get("/games/ideas/{candidate_id}", response_model=GameIdeasResponse)
+async def generate_game_ideas(
+    candidate_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> GameIdeasResponse:
+    candidate = await db.get(User, candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+
+    user_profile = await db.get(Profile, current_user.id)
+    candidate_profile = await db.get(Profile, candidate_id)
+    if not user_profile or not candidate_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both users must have profiles before generating games",
+        )
+
+    profile_context = {
+        "user1": {
+            "name": user_profile.name,
+            "interests": user_profile.interests,
+            "course": user_profile.course,
+            "societies": user_profile.societies,
+            "goals": user_profile.goals,
+            "bio": user_profile.bio,
+        },
+        "user2": {
+            "name": candidate_profile.name,
+            "interests": candidate_profile.interests,
+            "course": candidate_profile.course,
+            "societies": candidate_profile.societies,
+            "goals": candidate_profile.goals,
+            "bio": candidate_profile.bio,
+        },
+    }
+
+    fallback_games = {
+        "games": [
+            {
+                "game_type": "20 Questions",
+                "ai_role": "AI picks an object related to both users' interests and judges guesses.",
+                "technical_execution": "Store game_state in games table; each message is checked for win condition.",
+            },
+            {
+                "game_type": "Would You Rather",
+                "ai_role": "AI generates funny, polarizing options tailored to both users.",
+                "technical_execution": "Save both choices in DB and compute a compatibility delta.",
+            },
+            {
+                "game_type": "Emoji Story",
+                "ai_role": "AI gives a prompt and later translates/rates the emoji-only story.",
+                "technical_execution": "Persist turns and final AI translation + humour score.",
+            },
+        ]
+    }
+
+    games_prompt = (
+        "Return ONLY valid JSON object: {\"games\":[{\"game_type\":...,\"ai_role\":...,\"technical_execution\":...}]} "
+        "with exactly 3 games similar in style to: 20 Questions, Would You Rather, Emoji Story. "
+        "Tailor ideas to these two users' shared profile attributes. "
+        f"Profiles: {json.dumps(profile_context)}"
+    )
+    parsed = await call_gemini_json(games_prompt, fallback_games)
+
+    raw_games = parsed.get("games", []) if isinstance(parsed, dict) else []
+    games: list[GameIdea] = []
+    for item in raw_games[:3]:
+        if not isinstance(item, dict):
+            continue
+        games.append(
+            GameIdea(
+                game_type=str(item.get("game_type", "")),
+                ai_role=str(item.get("ai_role", "")),
+                technical_execution=str(item.get("technical_execution", "")),
+            )
+        )
+
+    if len(games) < 3:
+        games = [GameIdea(**x) for x in fallback_games["games"]]
+
+    return GameIdeasResponse(games=games)
+
+
+async def get_connection_match(db: AsyncSession, user_id: int, other_user_id: int) -> Match | None:
+    result = await db.execute(
+        select(Match).where(
+            or_(
+                and_(Match.user1_id == user_id, Match.user2_id == other_user_id),
+                and_(Match.user1_id == other_user_id, Match.user2_id == user_id),
+            )
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_or_create_chat(db: AsyncSession, match_id: int) -> Chat:
+    result = await db.execute(select(Chat).where(Chat.match_id == match_id))
+    chat = result.scalar_one_or_none()
+    if chat:
+        return chat
+
+    chat = Chat(match_id=match_id)
+    db.add(chat)
+    await db.flush()
+    return chat
+
+
+async def trim_chat_history_to_last_10(db: AsyncSession, chat_id: int) -> None:
+    result = await db.execute(
+        select(Message.id)
+        .where(Message.chat_id == chat_id)
+        .order_by(Message.sent_at.desc(), Message.id.desc())
+        .offset(10)
+    )
+    stale_ids = [row[0] for row in result.all()]
+    if stale_ids:
+        await db.execute(delete(Message).where(Message.id.in_(stale_ids)))
+
+
+@app.post("/connections/{candidate_id}", response_model=MatchRead)
+async def connect_with_user(
+    candidate_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MatchRead:
+    if candidate_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot connect with yourself")
+
+    candidate = await db.get(User, candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+
+    user_profile = await db.get(Profile, current_user.id)
+    candidate_profile = await db.get(Profile, candidate_id)
+    if not user_profile or not candidate_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both users must have profiles before connecting",
+        )
+
+    existing = await get_connection_match(db, current_user.id, candidate_id)
+    if existing:
+        existing.status = "connected"
+        match = existing
+    else:
+        ai_data = await get_ai_match_data(user_profile, candidate_profile)
+        user1_id, user2_id = sorted([current_user.id, candidate_id])
+        match = Match(
+            user1_id=user1_id,
+            user2_id=user2_id,
+            match_score=ai_data.match_score,
+            ai_reason=ai_data.reason,
+            ai_icebreaker=ai_data.icebreaker,
+            status="connected",
+        )
+        db.add(match)
+
+    await db.flush()
+    await get_or_create_chat(db, match.id)
+    await db.commit()
+    await db.refresh(match)
+    return MatchRead.model_validate(match)
+
+
+@app.get("/connections", response_model=list[ConnectionRead])
+async def list_connections(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ConnectionRead]:
+    result = await db.execute(
+        select(Match).where(
+            and_(
+                or_(Match.user1_id == current_user.id, Match.user2_id == current_user.id),
+                Match.status == "connected",
+            )
+        )
+    )
+    matches = result.scalars().all()
+
+    items: list[ConnectionRead] = []
+    for match in matches:
+        other_id = match.user2_id if match.user1_id == current_user.id else match.user1_id
+        other_profile = await db.get(Profile, other_id)
+        items.append(
+            ConnectionRead(
+                match_id=match.id,
+                user_id=other_id,
+                name=other_profile.name if other_profile and other_profile.name else f"User {other_id}",
+                status=match.status,
+            )
+        )
+    return items
+
+
+@app.post("/connections/{connection_user_id}/chat", response_model=ChatMessageRead)
+async def send_message_to_connection(
+    connection_user_id: int,
+    payload: ChatMessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ChatMessageRead:
+    if connection_user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot chat with yourself")
+
+    connection = await get_connection_match(db, current_user.id, connection_user_id)
+    if not connection or connection.status != "connected":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not connected with this user")
+
+    chat = await get_or_create_chat(db, connection.id)
+    message = Message(
+        chat_id=chat.id,
+        sender_id=current_user.id,
+        content=payload.content.strip(),
+        message_type=payload.message_type,
+    )
+    db.add(message)
+    await db.flush()
+
+    await trim_chat_history_to_last_10(db, chat.id)
+    await db.commit()
+    await db.refresh(message)
+    return ChatMessageRead.model_validate(message)
+
+
+@app.get("/connections/{connection_user_id}/chat", response_model=list[ChatMessageRead])
+async def get_recent_chat_history(
+    connection_user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ChatMessageRead]:
+    if connection_user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot chat with yourself")
+
+    connection = await get_connection_match(db, current_user.id, connection_user_id)
+    if not connection or connection.status != "connected":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not connected with this user")
+
+    chat = await get_or_create_chat(db, connection.id)
+    result = await db.execute(
+        select(Message)
+        .where(Message.chat_id == chat.id)
+        .order_by(Message.sent_at.desc(), Message.id.desc())
+        .limit(10)
+    )
+    latest = result.scalars().all()
+    return [ChatMessageRead.model_validate(item) for item in reversed(latest)]
 
 
 @app.on_event("startup")
