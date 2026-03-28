@@ -1,0 +1,11 @@
+{
+  "user_id": 1,
+  "elo_score": 1050,
+  "badge_tier": "GOLD",
+  "course": "BSc Computer Science",
+  "bio": "3rd Year student at University of Bath. AI Enthusiast and Hackathon veteran.",
+  "interests": ["Mobile Dev", "AI Ethics", "Hiking"],
+  "societies": ["CS Society", "Photography Club", "Bath Hack"],
+  "vibe_tags": ["Focused", "Collaborative"],
+  "goals": "Build the best social discovery app for Bath students."
+}
