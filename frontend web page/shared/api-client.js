@@ -88,9 +88,9 @@ async function callApi({ method = 'GET', path = '', query = {}, body = null } = 
 }
 
 function addOutput(obj) {
-  const console = document.getElementById('apiOutput');
-  if (!console) {
-    console.error('apiOutput div not found!');
+  const outputDiv = document.getElementById('apiOutput');
+  if (!outputDiv) {
+    window.console.error('apiOutput div not found!');
     return;
   }
   
@@ -103,8 +103,8 @@ function addOutput(obj) {
     <pre>${JSON.stringify(obj, null, 2)}</pre>
   `;
   
-  console.appendChild(entry);
-  console.scrollTop = console.scrollHeight;
+  outputDiv.appendChild(entry);
+  outputDiv.scrollTop = outputDiv.scrollHeight;
 }
 
 function clearOutput() {

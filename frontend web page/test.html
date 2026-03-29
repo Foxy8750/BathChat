@@ -1,76 +1,120 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>API Test</title>
+  <title>BathChat - Debug Console</title>
   <style>
     body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
-    pre { background: #222; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    h1 { color: #62d0ff; }
+    button { background: #62d0ff; color: #000; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+    button:hover { background: #4db8e0; }
+    pre { background: #222; padding: 15px; border-radius: 4px; overflow-x: auto; max-height: 400px; overflow-y: auto; border: 1px solid #333; }
+    .success { color: #51cf66; }
+    .error { color: #ff6b6b; }
+    input { background: #222; color: #fff; border: 1px solid #333; padding: 8px; border-radius: 4px; color: #fff; margin-bottom: 10px; width: 300px; }
   </style>
 </head>
 <body>
-  <h1>API Test</h1>
-  <button onclick="testAuth()">Test Auth Endpoint</button>
+  <h1>🛁 BathChat Debug Console</h1>
+  
+  <h2>Quick Tests</h2>
+  <button onclick="testGetMe()">Test GET /auth/me</button>
+  <button onclick="testLogin()">Test POST /auth/login</button>
   <button onclick="testCors()">Test CORS Preflight</button>
   <button onclick="clearLog()">Clear Log</button>
   
-  <h2>Log:</h2>
+  <h2>Manual Request</h2>
+  <input type="text" id="endpoint" placeholder="/auth/me" value="/auth/me">
+  <button onclick="manualRequest()">Send Request</button>
+  
+  <h2>Debug Log</h2>
   <pre id="log"></pre>
 
   <script>
-    function log(msg) {
+    function log(msg, type = 'info') {
       const el = document.getElementById('log');
-      el.textContent += new Date().toLocaleTimeString() + ': ' + msg + '\n';
+      const time = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'success' ? 'success' : '';
+      el.innerHTML += `<span class="${className}">[${time}] ${msg}</span>\n`;
       el.scrollTop = el.scrollHeight;
     }
 
     function clearLog() {
-      document.getElementById('log').textContent = '';
+      document.getElementById('log').innerHTML = '';
     }
 
-    async function testAuth() {
-      log('Testing /auth/me...');
+    async function testGetMe() {
+      log('Testing GET /auth/me...');
       try {
         const response = await fetch('http://127.0.0.1:8770/auth/me', {
           method: 'GET',
-          headers: {
-            'X-User-Id': '1',
-          }
+          headers: { 'X-User-Id': '1' }
         });
-        log(`Response status: ${response.status}`);
+        log(`Response status: ${response.status}`, response.ok ? 'success' : 'error');
         const data = await response.json();
-        log(`Response: ${JSON.stringify(data)}`);
+        log(`Response: ${JSON.stringify(data, null, 2)}`);
       } catch (e) {
-        log(`Error: ${e.message}`);
+        log(`Error: ${e.message}`, 'error');
+      }
+    }
+
+    async function testLogin() {
+      log('Testing POST /auth/login...');
+      try {
+        const response = await fetch('http://127.0.0.1:8770/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Id': '1' },
+          body: JSON.stringify({ email: 'test@test.com', password: 'test' })
+        });
+        log(`Response status: ${response.status}`, response.ok ? 'success' : 'error');
+        const data = await response.json();
+        log(`Response: ${JSON.stringify(data, null, 2)}`);
+      } catch (e) {
+        log(`Error: ${e.message}`, 'error');
       }
     }
 
     async function testCors() {
       log('Testing CORS preflight...');
       try {
-        const response = await fetch('http://127.0.0.1:8770/auth/login', {
+        const response = await fetch('http://127.0.0.1:8770/auth/me', {
           method: 'OPTIONS',
           headers: {
             'Origin': 'http://127.0.0.1:5500',
-            'Access-Control-Request-Method': 'POST',
-            'Access-Control-Request-Headers': 'content-type',
+            'Access-Control-Request-Method': 'GET',
           }
         });
-        log(`CORS response status: ${response.status}`);
-        const headers = {};
-        for (const [k, v] of response.headers.entries()) {
-          if (k.includes('access-control') || k.includes('Access-Control')) {
-            headers[k] = v;
+        log(`CORS Status: ${response.status}`, 'success');
+        for (const [k, v] of response.headers) {
+          if (k.toLowerCase().includes('access-control')) {
+            log(`  ${k}: ${v}`);
           }
         }
-        log(`CORS headers: ${JSON.stringify(headers)}`);
       } catch (e) {
-        log(`CORS Error: ${e.message}`);
+        log(`CORS Error: ${e.message}`, 'error');
       }
     }
 
-    log('Test page loaded');
-    log('Base URL: http://127.0.0.1:8770');
-    log('Frontend URL: http://127.0.0.1:5500');
+    async function manualRequest() {
+      const endpoint = document.getElementById('endpoint').value;
+      log(`Sending GET ${endpoint}...`);
+      try {
+        const response = await fetch(`http://127.0.0.1:8770${endpoint}`, {
+          method: 'GET',
+          headers: { 'X-User-Id': '1' }
+        });
+        log(`Status: ${response.status}`, response.ok ? 'success' : 'error');
+        const data = await response.json();
+        log(`Response: ${JSON.stringify(data, null, 2)}`);
+      } catch (e) {
+        log(`Error: ${e.message}`, 'error');
+      }
+    }
+
+    window.onload = () => {
+      log('Debug console loaded!', 'success');
+      log('Frontend: http://127.0.0.1:5500');
+      log('Backend: http://127.0.0.1:8770');
+    };
   </script>
 </body>
 </html>
