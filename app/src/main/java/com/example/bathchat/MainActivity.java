@@ -1,6 +1,8 @@
 package com.example.bathchat;
 
 import android.os.Bundle;
+import android.widget.LinearLayout;
+
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
@@ -38,5 +40,8 @@ public class MainActivity extends AppCompatActivity {
             // This part is safe because it uses the Bottom Nav View
             NavigationUI.setupWithNavController(binding.navView, navController);
         }
+        LinearLayout headlinesContainer = findViewById(R.id.txtSoceityHighlightsList);
+        HeadlineFetcher fetcher = new HeadlineFetcher(this, headlinesContainer);
+        fetcher.fetchHeadlines("https://www.thesubath.com");
     }
 }
