@@ -1,80 +1,182 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="#FDFBF7">
 
-    <LinearLayout
+    <!-- Top App Bar -->
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/appBarLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="20dp">
+        android:background="@color/blue_primary"
+        android:elevation="4dp">
 
-        <ImageView
-            android:id="@+id/profile_image"
-            android:layout_width="100dp"
-            android:layout_height="100dp"
-            android:layout_gravity="center"
-            android:src="@drawable/ic_home_black_24dp" />
+        <androidx.appcompat.widget.Toolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
 
-        <TextView
-            android:id="@+id/tv_course"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_marginTop="8dp"
-            android:text="Course Loading..."
-            android:textColor="#666666" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:src="@drawable/chatgpt_image_mar_28__2026__04_55_44_pm"
+                    android:contentDescription="BathChat logo" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="BathChat"
+                    android:textColor="@android:color/white"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:layout_marginStart="8dp" />
+
+            </LinearLayout>
+
+        </androidx.appcompat.widget.Toolbar>
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <!-- Scrollable Content -->
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:background="@android:color/white"
-            android:elevation="2dp"
-            android:padding="16dp"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <ImageView
+                android:id="@+id/profile_image"
+                android:layout_width="100dp"
+                android:layout_height="100dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_home_black_24dp" />
+
+            <TextView
+                android:id="@+id/tv_course"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:layout_marginTop="8dp"
+                android:text="Course Loading..."
+                android:textColor="#666666" />
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Elo Score" android:textSize="12sp" />
-                <TextView android:id="@+id/tv_elo" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0" android:textStyle="bold" android:textSize="18sp" android:textColor="#0057B8"/>
+                android:layout_marginTop="20dp"
+                android:background="@android:color/white"
+                android:elevation="2dp"
+                android:padding="16dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:text="Elo Score"
+                        android:textSize="12sp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+
+                    <TextView
+                        android:id="@+id/tv_elo"
+                        android:text="0"
+                        android:textStyle="bold"
+                        android:textSize="18sp"
+                        android:textColor="#0057B8"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:background="#EEEEEE" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:text="Tier"
+                        android:textSize="12sp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+
+                    <TextView
+                        android:id="@+id/tv_tier"
+                        android:text="BRONZE"
+                        android:textStyle="bold"
+                        android:textSize="18sp"
+                        android:textColor="#D4AF37"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"/>
+                </LinearLayout>
             </LinearLayout>
 
-            <View android:layout_width="1dp" android:layout_height="match_parent" android:background="#EEEEEE" />
+            <TextView
+                android:text="About Me"
+                android:textStyle="bold"
+                android:layout_marginTop="24dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
 
-            <LinearLayout
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/tv_bio"
+                android:text="Bio loading..."
+                android:layout_marginTop="4dp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"/>
+
+            <TextView
+                android:text="Societies"
+                android:textStyle="bold"
+                android:layout_marginTop="24dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+
+            <TextView
+                android:id="@+id/tv_societies"
+                android:text="Societies loading..."
+                android:layout_marginTop="4dp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"/>
+
+            <Button
+                android:id="@+id/btn_settings"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Tier" android:textSize="12sp" />
-                <TextView android:id="@+id/tv_tier" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="BRONZE" android:textStyle="bold" android:textSize="18sp" android:textColor="#D4AF37"/>
-            </LinearLayout>
+                android:layout_gravity="center"
+                android:layout_marginTop="40dp"
+                android:layout_marginBottom="20dp"
+                android:text="⚙️ App Settings"
+                android:textColor="#888888" />
+
         </LinearLayout>
 
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="About Me" android:textStyle="bold" />
-        <TextView android:id="@+id/tv_bio" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Bio loading..." />
+    </androidx.core.widget.NestedScrollView>
 
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="Societies" android:textStyle="bold" />
-        <TextView android:id="@+id/tv_societies" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Societies loading..." />
-
-        <Button
-            android:id="@+id/btn_settings"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_marginTop="40dp"
-            android:layout_marginBottom="20dp"
-            android:text="⚙️ App Settings"
-            android:textColor="#888888" />
-
-    </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+</LinearLayout>
