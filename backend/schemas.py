@@ -59,6 +59,7 @@ class IcebreakerProfile(BaseModel):
     bio: str | None = None
 
 
+
 class MatchRequest(BaseModel):
     student_a: IcebreakerProfile
     student_b: IcebreakerProfile
@@ -93,7 +94,7 @@ class MatchRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class EloLogRead(BaseModel):
+class XPLogRead(BaseModel):
     id: int
     user_id: int
     points: int
@@ -101,3 +102,8 @@ class EloLogRead(BaseModel):
     timestamp: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserXPResponse(BaseModel):
+    user_id: int
+    total_xp: int
