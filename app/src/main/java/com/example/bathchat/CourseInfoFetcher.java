@@ -1,31 +1,21 @@
 package com.example.bathchat;
 
-import com.example.bathchat.R;
-
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
+import android.view.LayoutInflater;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.cardview.widget.CardView;
-import android.view.LayoutInflater;
-
-import org.json.JSONArray;
 import org.json.JSONObject;
-
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
+import okhttp3.*;
 
 public class CourseInfoFetcher {
-
-    private static final String API_KEY = "YOUR_ANTHROPIC_API_KEY";
-    private static final String API_URL = "https://api.anthropic.com/v1/messages";
+    private static final String API_KEY = "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";
+    private static final String API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
     private final Context context;
     private final LinearLayout container;
@@ -41,52 +31,24 @@ public class CourseInfoFetcher {
         executor.execute(() -> {
             try {
                 OkHttpClient client = new OkHttpClient();
-
-                // Build a specific prompt for course info
-                String prompt = "The user is studying " + courseName + " at university. " +
-                        "Provide 3 short, helpful bullet points about this course: " +
-                        "1. A common difficult module to watch out for. " +
-                        "2. A top career path. " +
-                        "3. A pro study tip for this specific field. " +
-                        "Keep each point under 15 words.";
+                String prompt = "Provide 3 short bullet points for a student studying " + courseName + ": 1. Hard module, 2. Career, 3. Tip.";
 
                 JSONObject body = new JSONObject();
-                body.put("model", "claude-3-sonnet-20240229"); // Use a stable model name
-                body.put("max_tokens", 500);
-
-                JSONArray messages = new JSONArray();
-                JSONObject msg = new JSONObject();
-                msg.put("role", "user");
-                msg.put("content", prompt);
-                messages.put(msg);
-
-                body.put("messages", messages);
-
-                RequestBody requestBody = RequestBody.create(
-                        body.toString(),
-                        MediaType.get("application/json; charset=utf-8")
-                );
+                body.put("model", "meta-llama/llama-3.1-8b-instruct:free");
+                body.put("messages", new org.json.JSONArray().put(new JSONObject().put("role", "user").put("content", prompt)));
 
                 Request request = new Request.Builder()
                         .url(API_URL)
-                        .post(requestBody)
-                        .addHeader("x-api-key", API_KEY)
-                        .addHeader("anthropic-version", "2023-06-01")
+                        .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+                        .addHeader("Authorization", "Bearer " + API_KEY)
                         .build();
 
                 Response response = client.newCall(request).execute();
-                String responseBody = response.body().string();
+                String resultText = new JSONObject(response.body().string())
+                        .getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
 
-                // Extract text from Claude's response
-                JSONObject jsonResponse = new JSONObject(responseBody);
-                String aiText = jsonResponse.getJSONArray("content")
-                        .getJSONObject(0)
-                        .getString("text");
-
-                mainHandler.post(() -> updateUI(aiText));
-
+                mainHandler.post(() -> updateUI(resultText));
             } catch (Exception e) {
-                e.printStackTrace();
                 mainHandler.post(() -> updateUI("Could not load course info."));
             }
         });
@@ -94,14 +56,9 @@ public class CourseInfoFetcher {
 
     private void updateUI(String info) {
         container.removeAllViews();
-
-        // Use your existing card layout
         LayoutInflater inflater = LayoutInflater.from(context);
         CardView card = (CardView) inflater.inflate(R.layout.card_headline, container, false);
-
-        TextView txt = card.findViewById(R.id.txtHeadline);
-        txt.setText(info);
-
+        ((TextView) card.findViewById(R.id.txtHeadline)).setText(info);
         container.addView(card);
     }
 }

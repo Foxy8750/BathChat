@@ -13,14 +13,12 @@ import java.util.List;
 public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.ViewHolder> {
 
     private List<Chat> chatList;
-    private OnChatClickListener listener; // New listener variable
+    private OnChatClickListener listener;
 
-    // Define the interface for the click action
     public interface OnChatClickListener {
         void onChatClick(Chat chat);
     }
 
-    // Updated constructor to include the listener
     public ChatAdapter(List<Chat> chatList, OnChatClickListener listener) {
         this.chatList = chatList;
         this.listener = listener;
@@ -29,8 +27,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.ViewHolder> {
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.item_chat, parent, false);
+        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_chat, parent, false);
         return new ViewHolder(view);
     }
 
@@ -39,45 +36,25 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.ViewHolder> {
         Chat chat = chatList.get(position);
         holder.name.setText(chat.getName());
 
+        // If no message from backend yet, show placeholder
         if (chat.getLastMessage() == null || chat.getLastMessage().isEmpty()) {
-            holder.lastMessage.setText("Select To Type!");
-            holder.statusTick.setVisibility(View.GONE);
+            holder.lastMessage.setText("Tap to start chatting!");
         } else {
             holder.lastMessage.setText(chat.getLastMessage());
-            holder.statusTick.setVisibility(View.VISIBLE);
-            applyStatusStyle(holder.statusTick, chat.getStatus());
         }
 
-        // Set the click listener on the entire row
-        holder.itemView.setOnClickListener(v -> {
-            if (listener != null) {
-                listener.onChatClick(chat);
-            }
-        });
-    }
-
-    private void applyStatusStyle(ImageView imageView, String status) {
-        if ("read".equals(status)) {
-            imageView.setColorFilter(0xFF34B7F1);
-        } else {
-            imageView.setColorFilter(0xFF888888);
-        }
+        holder.itemView.setOnClickListener(v -> listener.onChatClick(chat));
     }
 
     @Override
-    public int getItemCount() {
-        return chatList.size();
-    }
+    public int getItemCount() { return chatList.size(); }
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
         TextView name, lastMessage;
-        ImageView statusTick;
-
         public ViewHolder(View itemView) {
             super(itemView);
             name = itemView.findViewById(R.id.chat_name);
             lastMessage = itemView.findViewById(R.id.chat_last_message);
-            statusTick = itemView.findViewById(R.id.chat_status);
         }
     }
 }

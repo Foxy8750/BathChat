@@ -1,7 +1,5 @@
 package com.example.bathchat;
 
-import com.example.bathchat.R;
-
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
@@ -9,25 +7,17 @@ import android.view.LayoutInflater;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.cardview.widget.CardView;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
+import okhttp3.*;
 
 public class HeadlineFetcher {
-
-    private static final String API_KEY = "YOUR_ANTHROPIC_API_KEY";
-    private static final String API_URL = "https://api.anthropic.com/v1/messages";
+    private static final String API_KEY = "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";
+    private static final String API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
     private final Context context;
     private final LinearLayout container;
@@ -43,85 +33,29 @@ public class HeadlineFetcher {
         executor.execute(() -> {
             try {
                 OkHttpClient client = new OkHttpClient();
-
-                // Build the prompt
-                String prompt = "Please visit this website: " + websiteUrl +
-                        " and generate exactly 3 to 5 short punchy headlines summarising " +
-                        "the main stories or content on the page. " +
-                        "Reply ONLY with a JSON array of strings, no extra text. " +
-                        "Example: [\"Headline one\", \"Headline two\", \"Headline three\"]";
-
-                // Build request body
-                JSONObject message = new JSONObject();
-                message.put("role", "user");
-                message.put("content", prompt);
-
-                JSONArray messages = new JSONArray();
-                messages.put(message);
-
-                // Add web search tool
-                JSONObject webSearchTool = new JSONObject();
-                webSearchTool.put("type", "web_search_20250305");
-                webSearchTool.put("name", "web_search");
-
-                JSONArray tools = new JSONArray();
-                tools.put(webSearchTool);
+                String prompt = "Give me a JSON array of 3 headlines for " + websiteUrl + ". ONLY return the array like [\"A\", \"B\", \"C\"]";
 
                 JSONObject body = new JSONObject();
-                body.put("model", "claude-sonnet-4-20250514");
-                body.put("max_tokens", 1000);
-                body.put("messages", messages);
-                body.put("tools", tools);
-
-                RequestBody requestBody = RequestBody.create(
-                        body.toString(),
-                        MediaType.parse("application/json")
-                );
+                body.put("model", "meta-llama/llama-3.1-8b-instruct:free");
+                body.put("messages", new JSONArray().put(new JSONObject().put("role", "user").put("content", prompt)));
 
                 Request request = new Request.Builder()
                         .url(API_URL)
-                        .post(requestBody)
-                        .addHeader("Content-Type", "application/json")
-                        .addHeader("x-api-key", API_KEY)
-                        .addHeader("anthropic-version", "2023-06-01")
+                        .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+                        .addHeader("Authorization", "Bearer " + API_KEY)
                         .build();
 
                 Response response = client.newCall(request).execute();
-                String responseBody = response.body().string();
+                String resultText = new JSONObject(response.body().string())
+                        .getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
 
-                // Parse response
-                JSONObject json = new JSONObject(responseBody);
-                JSONArray content = json.getJSONArray("content");
-
-                // Find the text block in response
-                String resultText = "";
-                for (int i = 0; i < content.length(); i++) {
-                    JSONObject block = content.getJSONObject(i);
-                    if (block.getString("type").equals("text")) {
-                        resultText = block.getString("text");
-                        break;
-                    }
-                }
-
-                // Parse headlines from JSON array
-                // Strip any accidental markdown backticks
-                resultText = resultText.replace("```json", "").replace("```", "").trim();
-                JSONArray headlinesArray = new JSONArray(resultText);
-
+                JSONArray array = new JSONArray(resultText.replace("```json", "").replace("```", "").trim());
                 List<String> headlines = new ArrayList<>();
-                for (int i = 0; i < headlinesArray.length(); i++) {
-                    headlines.add(headlinesArray.getString(i));
-                }
+                for (int i = 0; i < array.length(); i++) headlines.add(array.getString(i));
 
-                // Update UI on main thread
                 mainHandler.post(() -> populateCards(headlines));
-
             } catch (Exception e) {
-                e.printStackTrace();
-                mainHandler.post(() -> {
-                    // Show error card if something goes wrong
-                    addErrorCard("Failed to load headlines: " + e.getMessage());
-                });
+                mainHandler.post(() -> addErrorCard("Failed to load headlines."));
             }
         });
     }
@@ -129,24 +63,20 @@ public class HeadlineFetcher {
     private void populateCards(List<String> headlines) {
         container.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(context);
-
         for (String headline : headlines) {
-            CardView card = (CardView) inflater.inflate(
-                    R.layout.card_headline, container, false);
-            TextView txt = card.findViewById(R.id.txtHeadline);
-            txt.setText(headline);
+            CardView card = (CardView) inflater.inflate(R.layout.card_headline, container, false);
+            ((TextView) card.findViewById(R.id.txtHeadline)).setText(headline);
             container.addView(card);
         }
     }
 
-    private void addErrorCard(String message) {
+    private void addErrorCard(String msg) {
         container.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(context);
-        CardView card = (CardView) inflater.inflate(
-                R.layout.card_headline, container, false);
-        TextView txt = card.findViewById(R.id.txtHeadline);
-        txt.setText(message);
-        txt.setTextColor(0xFFCC0000);
+        CardView card = (CardView) inflater.inflate(R.layout.card_headline, container, false);
+        TextView tv = card.findViewById(R.id.txtHeadline);
+        tv.setText(msg);
+        tv.setTextColor(0xFFCC0000);
         container.addView(card);
     }
 }

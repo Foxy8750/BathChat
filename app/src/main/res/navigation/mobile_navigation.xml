@@ -6,6 +6,12 @@
     app:startDestination="@+id/navigation_discover">
 
     <fragment
+        android:id="@+id/navigation_community"
+        android:name="com.example.bathchat.ui.community.CommunityFragment"
+        android:label="Community Board"
+        tools:layout="@layout/community_board" />
+
+    <fragment
         android:id="@+id/navigation_discover"
         android:name="com.example.bathchat.ui.discover.DiscoverFragment"
         android:label="Find Matches"
@@ -14,14 +20,28 @@
     <fragment
         android:id="@+id/navigation_messages"
         android:name="com.example.bathchat.ui.messages.MessagesFragment"
-        android:label="Chats &amp; Tasks"
-        tools:layout="@layout/messages" />
+        android:label="Messages"
+        tools:layout="@layout/messages">
+
+        <action
+            android:id="@+id/action_navigation_messages_to_chatDetail"
+            app:destination="@id/chatDetail"
+            app:enterAnim="@anim/nav_default_enter_anim"
+            app:exitAnim="@anim/nav_default_exit_anim" />
+    </fragment>
 
     <fragment
-        android:id="@+id/navigation_community"
-        android:name="com.example.bathchat.ui.community.CommunityFragment"
-        android:label="Community Board"
-        tools:layout="@layout/community_board" />
+        android:id="@+id/chatDetail"
+        android:name="com.example.bathchat.ui.messages.ChatDetailFragment"
+        android:label="{other_user_name}"
+        tools:layout="@layout/fragment_chat_detail">
+        <argument
+            android:name="other_user_id"
+            app:argType="integer" />
+        <argument
+            android:name="other_user_name"
+            app:argType="string" />
+    </fragment>
 
     <fragment
         android:id="@+id/navigation_profile"
@@ -29,15 +49,10 @@
         android:label="My Stats"
         tools:layout="@layout/profile" />
 
-
     <fragment
         android:id="@+id/navigation_settings"
         android:name="com.example.bathchat.ui.profile.SettingsFragment"
         android:label="Settings"
-        app:enterAnim="@anim/nav_default_enter_anim"
-        app:exitAnim="@anim/nav_default_exit_anim"
-        app:popEnterAnim="@anim/nav_default_pop_enter_anim"
-        app:popExitAnim="@anim/nav_default_pop_exit_anim"
-        app:layout="@layout/settings" />
+        tools:layout="@layout/settings" />
 
 </navigation>
