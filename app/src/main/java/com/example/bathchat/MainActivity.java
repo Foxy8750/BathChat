@@ -28,8 +28,7 @@ public class MainActivity extends AppCompatActivity {
             NavController navController = navHostFragment.getNavController();
 
             AppBarConfiguration appBarConfiguration = new AppBarConfiguration.Builder(
-                    R.id.navigation_discover, R.id.navigation_messages,
-                    R.id.navigation_community, R.id.navigation_profile)
+                    R.id.navigation_community, R.id.navigation_discover, R.id.navigation_messages, R.id.navigation_profile)
                     .build();
 
             // ONLY setup the action bar if it actually exists in your theme
@@ -43,5 +42,11 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout headlinesContainer = findViewById(R.id.txtSoceityHighlightsList);
         HeadlineFetcher fetcher = new HeadlineFetcher(this, headlinesContainer);
         fetcher.fetchHeadlines("https://www.thesubath.com");
+
+        LinearLayout courseContainer = findViewById(R.id.mealContainer); // Or whatever your inner ID is
+        CourseInfoFetcher fetcher2 = new CourseInfoFetcher(this, courseContainer);
+
+        // Trigger the search (you can get this string from your Profile class)
+        fetcher2.fetchCourseDetails("Computer Science");
     }
 }
