@@ -46,6 +46,9 @@ app = FastAPI(title="BathChat API")
 
 DISCOVERY_SHORTLIST_SIZE = 10
 DISCOVERY_RETURN_SIZE = 3
+EXP_REWARD_FRIEND_REQUEST_SENT = 5
+EXP_REWARD_CONNECTED = 10
+EXP_REWARD_CHAT_SENT = 2
 
 
 def get_cors_origins() -> list[str]:
@@ -365,6 +368,10 @@ async def connect_with_user(
     await get_or_create_chat(db, match.id)
     await db.commit()
     await db.refresh(match)
+
+    await award_xp(db, current_user, EXP_REWARD_CONNECTED, "Connected with another user")
+    await award_xp(db, candidate, EXP_REWARD_CONNECTED, "Connected with another user")
+
     return MatchRead.model_validate(match)
 
 
@@ -425,6 +432,9 @@ async def send_message_to_connection(
     await trim_chat_history_to_last_10(db, chat.id)
     await db.commit()
     await db.refresh(message)
+
+    await award_xp(db, current_user, EXP_REWARD_CHAT_SENT, "Sent a chat message")
+
     return ChatMessageRead.model_validate(message)
 
 
@@ -482,6 +492,20 @@ async def on_startup() -> None:
                     END IF;
                 END
                 $$;
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                UPDATE users
+                SET badge_tier = CASE
+                    WHEN exp_points >= 1300 THEN 'diamond'
+                    WHEN exp_points >= 1100 THEN 'platinum'
+                    WHEN exp_points >= 900 THEN 'gold'
+                    WHEN exp_points >= 700 THEN 'silver'
+                    ELSE 'bronze'
+                END;
                 """
             )
         )
@@ -841,7 +865,7 @@ async def send_message_for_xp(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
 
     if len(content.strip()) >= 10:
-        await award_xp(db, current_user, 1)
+        await award_xp(db, current_user, EXP_REWARD_CHAT_SENT, "Sent a chat message")
 
     return {
         "detail": "Message sent",
@@ -889,6 +913,8 @@ async def send_friend_request(
     db.add(request)
     await db.commit()
     await db.refresh(request)
+
+    await award_xp(db, current_user, EXP_REWARD_FRIEND_REQUEST_SENT, "Sent a friend request")
 
     return {"detail": "Friend request sent", "request_id": request.id}
 
@@ -945,7 +971,7 @@ async def accept_friend_request(
     await get_or_create_chat(db, match.id)
     await db.commit()
 
-    await award_xp(db, sender, 5)
-    await award_xp(db, receiver, 1)
+    await award_xp(db, sender, EXP_REWARD_CONNECTED, "Friend request accepted and connected")
+    await award_xp(db, receiver, EXP_REWARD_CONNECTED, "Accepted friend request and connected")
 
     return {"detail": "Friend request accepted"}

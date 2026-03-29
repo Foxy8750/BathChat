@@ -34,15 +34,15 @@ def hash_password(password: str) -> str:
 
 
 def badge_for_exp(exp_points: int) -> str:
-    if exp_points >= 1200:
+    if exp_points >= 1300:
+        return "diamond"
+    if exp_points >= 1100:
         return "platinum"
-    if exp_points >= 1000:
+    if exp_points >= 900:
         return "gold"
-    if exp_points >= 800:
+    if exp_points >= 700:
         return "silver"
-    if exp_points >= 500:
-        return "bronze"
-    return "iron"
+    return "bronze"
 
 
 def random_seed_data() -> DemoSeedData:
