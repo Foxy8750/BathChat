@@ -46,6 +46,8 @@ public class ProfileFragment extends Fragment {
             ((TextView) root.findViewById(R.id.tv_course)).setText(obj.getString("course"));
             ((TextView) root.findViewById(R.id.tv_bio)).setText(obj.getString("bio"));
 
+
+
             JSONArray societies = obj.getJSONArray("societies");
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < societies.length(); i++) {
