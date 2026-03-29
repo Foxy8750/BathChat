@@ -21,8 +21,6 @@ from backend.schemas import (
     ChatMessageCreate,
     ChatMessageRead,
     ConnectionRead,
-    GameIdea,
-    GameIdeasResponse,
     MatchRead,
     ProfileRead,
     ProfileUpsert,
@@ -777,80 +775,6 @@ async def list_my_matches(
 
     ai_ranked_matches.sort(key=lambda m: (m.match_score, m.id), reverse=True)
     return ai_ranked_matches[:DISCOVERY_RETURN_SIZE]
-
-
-@app.get("/games/ideas/{candidate_id}", response_model=GameIdeasResponse)
-async def generate_game_ideas(
-    candidate_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> GameIdeasResponse:
-    candidate = await db.get(User, candidate_id)
-    if not candidate:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
-
-    user_profile = await db.get(Profile, current_user.id)
-    candidate_profile = await db.get(Profile, candidate_id)
-    if not user_profile or not candidate_profile:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Both users must have profiles before generating games",
-        )
-
-    fallback_games = [
-        GameIdea(
-            game_type="20 Questions",
-            ai_role="AI picks an object related to both users' interests and judges guesses.",
-            technical_execution="Store game_state in games table; each message is checked for win condition.",
-        ),
-        GameIdea(
-            game_type="Would You Rather",
-            ai_role="AI generates funny, polarizing options tailored to both users.",
-            technical_execution="Save both choices in DB and compute a compatibility delta.",
-        ),
-        GameIdea(
-            game_type="Emoji Story",
-            ai_role="AI gives a prompt and later translates/rates the emoji-only story.",
-            technical_execution="Persist turns and final AI translation + humour score.",
-        ),
-    ]
-
-    if not OPENROUTER_API_KEY:
-        return GameIdeasResponse(games=fallback_games)
-
-    prompt = (
-        "Return ONLY valid JSON with this structure: "
-        '{"games":[{"game_type":"...","ai_role":"...","technical_execution":"..."}]}. '
-        "Provide exactly 3 game ideas similar in style to 20 Questions, Would You Rather, and Emoji Story. "
-        "Tailor ideas to these two students.\n"
-        f"Student 1: {ai_profile_payload(user_profile)}\n"
-        f"Student 2: {ai_profile_payload(candidate_profile)}"
-    )
-
-    try:
-        parsed = await call_openrouter_json(prompt, temperature=0.6)
-        if not parsed:
-            return GameIdeasResponse(games=fallback_games)
-        raw_games = parsed.get("games", []) if isinstance(parsed, dict) else []
-
-        games: list[GameIdea] = []
-        for item in raw_games[:3]:
-            if not isinstance(item, dict):
-                continue
-            games.append(
-                GameIdea(
-                    game_type=str(item.get("game_type", "")).strip(),
-                    ai_role=str(item.get("ai_role", "")).strip(),
-                    technical_execution=str(item.get("technical_execution", "")).strip(),
-                )
-            )
-
-        if len(games) == 3 and all(g.game_type and g.ai_role and g.technical_execution for g in games):
-            return GameIdeasResponse(games=games)
-    except Exception:
-        pass
-
-    return GameIdeasResponse(games=fallback_games)
 
 
 @app.post("/messages/send")

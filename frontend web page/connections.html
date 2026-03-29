@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BathChat - Connections</title>
+  <link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html" class="logo">🛁 BathChat</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="auth.html">Auth</a></li>
+      <li><a href="profile.html">Profile</a></li>
+      <li><a href="discovery.html">Discovery</a></li>
+      <li><a href="connections.html" class="active">Connections</a></li>
+      <li><a href="leaderboard.html">Leaderboard</a></li>
+    </ul>
+    <div class="nav-right">
+      <div class="user-info">
+        User: <span id="userIdDisplay">1</span>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section>
+      <h1>Connections & Chat</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem;">Manage connections and chat with friends.</p>
+
+      <div class="cards-grid">
+        <form id="connectionsListForm" style="grid-column: 1 / -1;">
+          <h3>My Connections</h3>
+          <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">View all your connections.</p>
+          <button type="submit">GET /connections</button>
+        </form>
+
+        <form id="connectForm">
+          <h3>Connect with Someone</h3>
+          <div class="form-group">
+            <label>Candidate ID</label>
+            <input name="candidate_id" type="number" min="1" placeholder="User ID to connect with" required>
+          </div>
+          <button type="submit">POST /connections/{candidate_id}</button>
+        </form>
+
+        <form id="friendRequestForm">
+          <h3>Send Friend Request</h3>
+          <div class="form-group">
+            <label>Receiver ID</label>
+            <input name="receiver_id" type="number" min="1" placeholder="User ID" required>
+          </div>
+          <button type="submit">POST /friends/request/{receiver_id}</button>
+        </form>
+
+        <form id="friendAcceptForm">
+          <h3>Accept Friend Request</h3>
+          <div class="form-group">
+            <label>Request ID</label>
+            <input name="request_id" type="number" min="1" placeholder="Request ID to accept" required>
+          </div>
+          <button type="submit">POST /friends/request/{request_id}/accept</button>
+        </form>
+
+        <form id="chatSendForm" style="grid-column: 1 / -1;">
+          <h3>Send Message</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+            <div class="form-group">
+              <label>Connection User ID</label>
+              <input name="connection_user_id" type="number" min="1" placeholder="User ID" required>
+            </div>
+            <div class="form-group">
+              <label>Message Type</label>
+              <input name="message_type" type="text" value="text" placeholder="text">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Message</label>
+            <textarea name="content" placeholder="Type your message..." required style="min-height: 100px;"></textarea>
+          </div>
+          <button type="submit">POST /connections/{connection_user_id}/chat</button>
+        </form>
+
+        <form id="chatGetForm" style="grid-column: 1 / -1;">
+          <h3>View Chat History</h3>
+          <div class="form-group">
+            <label>Connection User ID</label>
+            <input name="connection_user_id" type="number" min="1" placeholder="Enter user ID to view chat" required>
+          </div>
+          <button type="submit">GET /connections/{connection_user_id}/chat</button>
+        </form>
+
+        <form id="messageXpForm" style="grid-column: 1 / -1;">
+          <h3>Send Direct Message for XP</h3>
+          <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">Send a message to earn XP (minimum 10 characters). Earn +2 XP per message!</p>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+            <div class="form-group">
+              <label>Recipient ID</label>
+              <input name="recipient_id" type="number" min="1" placeholder="User ID" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Message (10+ chars for XP reward)</label>
+            <textarea name="content" placeholder="Type your message..." required style="min-height: 100px;"></textarea>
+          </div>
+          <button type="submit">POST /messages/send (+2 XP)</button>
+        </form>
+      </div>
+
+      <h2 style="margin-top: 3rem; margin-bottom: 1rem;">Response Output</h2>
+      <div id="apiOutput"></div>
+    </section>
+  </main>
+
+  <script src="shared/api-client.js"></script>
+  <script>
+    document.getElementById('connectionsListForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await callApi({ method: 'GET', path: '/connections' });
+    });
+
+    document.getElementById('connectForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await callApi({
+        method: 'POST',
+        path: `/connections/${fd.get('candidate_id')}`,
+      });
+    });
+
+    document.getElementById('friendRequestForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await callApi({
+        method: 'POST',
+        path: `/friends/request/${fd.get('receiver_id')}`,
+      });
+    });
+
+    document.getElementById('friendAcceptForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await callApi({
+        method: 'POST',
+        path: `/friends/request/${fd.get('request_id')}/accept`,
+      });
+    });
+
+    document.getElementById('chatSendForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await callApi({
+        method: 'POST',
+        path: `/connections/${fd.get('connection_user_id')}/chat`,
+        body: {
+          content: fd.get('content'),
+          message_type: fd.get('message_type'),
+        },
+      });
+    });
+
+    document.getElementById('chatGetForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await callApi({
+        method: 'GET',
+        path: `/connections/${fd.get('connection_user_id')}/chat`,
+      });
+    });
+
+    document.getElementById('messageXpForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await callApi({
+        method: 'POST',
+        path: '/messages/send',
+        query: {
+          recipient_id: fd.get('recipient_id'),
+          content: fd.get('content'),
+        },
+      });
+    });
+
+    document.getElementById('userIdDisplay').textContent = getUserId();
+  </script>
+</body>
+</html>
