@@ -34,6 +34,8 @@ async function callApi({ method = 'GET', path = '', query = {}, body = null } = 
   
   const options = {
     method,
+    mode: 'cors',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       'X-User-Id': userId,

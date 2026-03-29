@@ -43,70 +43,104 @@
     }
 
     async function testGetMe() {
-      log('Testing GET /auth/me...');
+      log('Testing GET /auth/me...', 'info');
+      const startTime = Date.now();
       try {
+        log('  → Sending request with X-User-Id: 1');
         const response = await fetch('http://127.0.0.1:8770/auth/me', {
           method: 'GET',
-          headers: { 'X-User-Id': '1' }
+          headers: { 'X-User-Id': '1' },
+          mode: 'cors',
+          credentials: 'include'
         });
-        log(`Response status: ${response.status}`, response.ok ? 'success' : 'error');
-        const data = await response.json();
-        log(`Response: ${JSON.stringify(data, null, 2)}`);
+        const elapsed = Date.now() - startTime;
+        log(`  ✓ Got response after ${elapsed}ms: status ${response.status}`, response.ok ? 'success' : 'error');
+        const text = await response.text();
+        log(`  ✓ Response body length: ${text.length} bytes`);
+        if (text) {
+          try {
+            const data = JSON.parse(text);
+            log(`  ✓ Parsed JSON: ${JSON.stringify(data, null, 2)}`);
+          } catch (e) {
+            log(`  ! Response is not JSON: ${text.substring(0, 200)}`);
+          }
+        }
       } catch (e) {
-        log(`Error: ${e.message}`, 'error');
+        const elapsed = Date.now() - startTime;
+        log(`  ✗ Error after ${elapsed}ms: ${e.message}`, 'error');
       }
     }
 
     async function testLogin() {
-      log('Testing POST /auth/login...');
+      log('Testing POST /auth/login...', 'info');
+      const startTime = Date.now();
       try {
+        log('  → Sending credentials test');
         const response = await fetch('http://127.0.0.1:8770/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-User-Id': '1' },
-          body: JSON.stringify({ email: 'test@test.com', password: 'test' })
+          body: JSON.stringify({ email: 'test@test.com', password: 'test' }),
+          mode: 'cors',
+          credentials: 'include'
         });
-        log(`Response status: ${response.status}`, response.ok ? 'success' : 'error');
+        const elapsed = Date.now() - startTime;
+        log(`  ✓ Got response after ${elapsed}ms: status ${response.status}`, response.ok ? 'success' : 'error');
         const data = await response.json();
-        log(`Response: ${JSON.stringify(data, null, 2)}`);
+        log(`  → Response: ${JSON.stringify(data, null, 2)}`);
       } catch (e) {
-        log(`Error: ${e.message}`, 'error');
+        const elapsed = Date.now() - startTime;
+        log(`  ✗ Error after ${elapsed}ms: ${e.message}`, 'error');
       }
     }
 
     async function testCors() {
-      log('Testing CORS preflight...');
+      log('Testing CORS by making a real GET request...', 'info');
+      const startTime = Date.now();
       try {
-        const response = await fetch('http://127.0.0.1:8770/auth/me', {
-          method: 'OPTIONS',
-          headers: {
-            'Origin': 'http://127.0.0.1:5500',
-            'Access-Control-Request-Method': 'GET',
-          }
+        log('  → Making GET request from port 5500 to 8770');
+        const response = await fetch('http://127.0.0.1:8770/docs', {
+          method: 'GET',
+          mode: 'cors'
         });
-        log(`CORS Status: ${response.status}`, 'success');
-        for (const [k, v] of response.headers) {
-          if (k.toLowerCase().includes('access-control')) {
-            log(`  ${k}: ${v}`);
-          }
+        const elapsed = Date.now() - startTime;
+        log(`  ✓ CORS check passed! Status: ${response.status} (${elapsed}ms)`, 'success');
+        log('  ✓ Browser allowed cross-origin request');
+        if (response.headers.get('access-control-allow-origin')) {
+          log(`  ✓ Server sent CORS header: ${response.headers.get('access-control-allow-origin')}`);
         }
       } catch (e) {
-        log(`CORS Error: ${e.message}`, 'error');
+        const elapsed = Date.now() - startTime;
+        log(`  ✗ CORS blocked! Error after ${elapsed}ms: ${e.message}`, 'error');
       }
     }
 
     async function manualRequest() {
       const endpoint = document.getElementById('endpoint').value;
-      log(`Sending GET ${endpoint}...`);
+      log(`Sending GET ${endpoint}...`, 'info');
+      const startTime = Date.now();
       try {
+        log(`  → URL: http://127.0.0.1:8770${endpoint}`);
         const response = await fetch(`http://127.0.0.1:8770${endpoint}`, {
           method: 'GET',
-          headers: { 'X-User-Id': '1' }
+          headers: { 'X-User-Id': '1' },
+          mode: 'cors',
+          credentials: 'include'
         });
-        log(`Status: ${response.status}`, response.ok ? 'success' : 'error');
-        const data = await response.json();
-        log(`Response: ${JSON.stringify(data, null, 2)}`);
+        const elapsed = Date.now() - startTime;
+        log(`  ✓ Status: ${response.status} (${elapsed}ms)`, response.ok ? 'success' : 'error');
+        const text = await response.text();
+        log(`  ✓ Body length: ${text.length} bytes`);
+        if (text) {
+          try {
+            const data = JSON.parse(text);
+            log(`  ✓ Parsed: ${JSON.stringify(data, null, 2)}`);
+          } catch (e) {
+            log(`  → Raw response: ${text.substring(0, 500)}`);
+          }
+        }
       } catch (e) {
-        log(`Error: ${e.message}`, 'error');
+        const elapsed = Date.now() - startTime;
+        log(`  ✗ Error after ${elapsed}ms: ${e.message}`, 'error');
       }
     }
 
