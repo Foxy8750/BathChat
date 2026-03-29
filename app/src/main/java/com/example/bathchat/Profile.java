@@ -1,15 +1,23 @@
 package com.example.bathchat;
 
 public class Profile {
-    int imageResId;
-    String course;
-    String societies;
-    String hobbies;
+    // These must be public so the Adapter can see them
+    public String matchScore = "Loading...";
+    public String aiReason = "";
+    public String aiIcebreaker = "";
+    public String status = "";
+    public int imageResId;
 
-    public Profile(int imageResId, String course, String societies, String hobbies) {
+    // Constructor
+    public Profile(int imageResId) {
         this.imageResId = imageResId;
-        this.course = course;
-        this.societies = societies;
-        this.hobbies = hobbies;
+    }
+
+    // THIS IS THE METHOD THE ACTIVITY IS LOOKING FOR
+    public void updateFromApi(String score, String reason, String icebreaker, String status) {
+        this.matchScore = score;
+        this.aiReason = reason;
+        this.aiIcebreaker = icebreaker;
+        this.status = status;
     }
 }

@@ -5,9 +5,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
-
+import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
-
 import java.util.List;
 
 public class ProfileAdapter extends RecyclerView.Adapter<ProfileAdapter.ViewHolder> {
@@ -20,36 +19,42 @@ public class ProfileAdapter extends RecyclerView.Adapter<ProfileAdapter.ViewHold
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
         ImageView imgProfile;
-        TextView tvCourse, tvSocieties, tvHobbies;
+        TextView tvMatchScore, tvAiReason, tvAiIcebreaker, tvStatus;
 
         public ViewHolder(View itemView) {
             super(itemView);
             imgProfile = itemView.findViewById(R.id.imgProfile);
-            tvCourse = itemView.findViewById(R.id.tvCourse);
-            tvSocieties = itemView.findViewById(R.id.tvSocieties);
-            tvHobbies = itemView.findViewById(R.id.tvHobbies);
+            // Updated IDs to match your intent
+            tvMatchScore = itemView.findViewById(R.id.match_score);
+            tvAiReason = itemView.findViewById(R.id.ai_reason);
+            tvAiIcebreaker = itemView.findViewById(R.id.ai_icebreaker);
+            tvStatus = itemView.findViewById(R.id.status);
         }
     }
 
+    @NonNull
     @Override
-    public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(parent.getContext())
                 .inflate(R.layout.item_profile_card, parent, false);
         return new ViewHolder(view);
     }
 
     @Override
-    public void onBindViewHolder(ViewHolder holder, int position) {
+    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         Profile profile = profiles.get(position);
 
         holder.imgProfile.setImageResource(profile.imageResId);
-        holder.tvCourse.setText(profile.course);
-        holder.tvSocieties.setText(profile.societies);
-        holder.tvHobbies.setText(profile.hobbies);
+
+        // Setting the API data
+        holder.tvMatchScore.setText(profile.matchScore);
+        holder.tvAiReason.setText(profile.aiReason);
+        holder.tvAiIcebreaker.setText(profile.aiIcebreaker);
+        holder.tvStatus.setText(profile.status);
     }
 
     @Override
     public int getItemCount() {
-        return profiles.size();
+        return (profiles != null) ? profiles.size() : 0;
     }
 }

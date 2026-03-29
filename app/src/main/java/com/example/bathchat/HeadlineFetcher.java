@@ -1,5 +1,7 @@
 package com.example.bathchat;
 
+import com.example.bathchat.R;
+
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;

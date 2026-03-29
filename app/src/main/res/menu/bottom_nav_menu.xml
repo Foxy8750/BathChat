@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
+        android:id="@+id/navigation_community"
+        android:icon="@drawable/ic_home_black_24dp"
+        android:title="Community" />
+    <item
         android:id="@+id/navigation_discover"
         android:icon="@drawable/ic_dashboard_black_24dp"
         android:title="Discover" />
@@ -8,10 +12,7 @@
         android:id="@+id/navigation_messages"
         android:icon="@drawable/ic_notifications_black_24dp"
         android:title="Messages" />
-    <item
-        android:id="@+id/navigation_community"
-        android:icon="@drawable/ic_home_black_24dp"
-        android:title="Community" />
+
     <item
         android:id="@+id/navigation_profile"
         android:icon="@drawable/ic_home_black_24dp"
