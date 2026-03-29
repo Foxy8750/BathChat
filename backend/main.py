@@ -7,7 +7,7 @@ import secrets
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import and_, delete, or_, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import Base, engine, get_db
@@ -22,6 +22,8 @@ from backend.schemas import (
     MatchRead,
     ProfileRead,
     ProfileUpsert,
+    TopEloHolderRead,
+    TopEloLeaderboardResponse,
     TokenResponse,
     UserCreate,
     UserLogin,
@@ -101,6 +103,12 @@ def exact_overlap_count(items_a: list[str] | None, items_b: list[str] | None) ->
     set_a = {normalize_exact_value(v) for v in (items_a or []) if isinstance(v, str) and normalize_exact_value(v)}
     set_b = {normalize_exact_value(v) for v in (items_b or []) if isinstance(v, str) and normalize_exact_value(v)}
     return len(set_a & set_b)
+
+
+async def get_user_elo_rank(db: AsyncSession, user: User) -> int:
+    result = await db.execute(select(func.count()).where(User.elo_score > user.elo_score))
+    higher_count = int(result.scalar_one() or 0)
+    return higher_count + 1
 
 
 def extract_json_payload(raw_text: str) -> dict:
@@ -607,6 +615,7 @@ async def upsert_my_profile(
 
     await db.commit()
     await db.refresh(profile)
+    elo_rank = await get_user_elo_rank(db, current_user)
     return ProfileRead(
         user_id=profile.user_id,
         name=profile.name,
@@ -621,6 +630,7 @@ async def upsert_my_profile(
         bio=profile.bio,
         elo_score=current_user.elo_score,
         badge_tier=current_user.badge_tier,
+        elo_rank=elo_rank,
     )
 
 
@@ -632,6 +642,7 @@ async def get_my_profile(
     profile = await db.get(Profile, current_user.id)
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    elo_rank = await get_user_elo_rank(db, current_user)
     return ProfileRead(
         user_id=profile.user_id,
         name=profile.name,
@@ -646,7 +657,34 @@ async def get_my_profile(
         bio=profile.bio,
         elo_score=current_user.elo_score,
         badge_tier=current_user.badge_tier,
+        elo_rank=elo_rank,
     )
+
+
+@app.get("/leaderboard/top-elo", response_model=TopEloLeaderboardResponse)
+async def get_top_elo_holders(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TopEloLeaderboardResponse:
+    _ = current_user
+    result = await db.execute(select(User).order_by(User.elo_score.desc(), User.id.asc()).limit(5))
+    users = result.scalars().all()
+
+    holders: list[TopEloHolderRead] = []
+    for user in users:
+        rank = await get_user_elo_rank(db, user)
+        profile = await db.get(Profile, user.id)
+        holders.append(
+            TopEloHolderRead(
+                user_id=user.id,
+                name=profile.name if profile and profile.name else f"User {user.id}",
+                elo_score=user.elo_score,
+                badge_tier=user.badge_tier,
+                elo_rank=rank,
+            )
+        )
+
+    return TopEloLeaderboardResponse(top_holders=holders)
 
 
 @app.post("/discovery/match/{candidate_id}", response_model=MatchRead)
@@ -703,13 +741,92 @@ async def discover_match(
     return MatchRead.model_validate(match)
 
 
+def local_discovery_score(user_profile: Profile, candidate_profile: Profile) -> AIMatchData:
+    shared_interests = exact_overlap_count(user_profile.interests, candidate_profile.interests)
+    shared_societies = exact_overlap_count(user_profile.societies, candidate_profile.societies)
+    same_course = bool(
+        normalize_exact_value(user_profile.course)
+        and normalize_exact_value(user_profile.course) == normalize_exact_value(candidate_profile.course)
+    )
+
+    score = 20 + (shared_interests * 12) + (shared_societies * 10) + (8 if same_course else 0)
+    score = float(max(0, min(100, score)))
+
+    parts: list[str] = []
+    if shared_interests:
+        parts.append(f"{shared_interests} common interest{'s' if shared_interests != 1 else ''}")
+    if shared_societies:
+        parts.append(f"{shared_societies} common societ{'ies' if shared_societies != 1 else 'y'}")
+    if same_course:
+        parts.append("same course")
+
+    reason = f"You share {', '.join(parts)}." if parts else "Potential match based on profile similarity."
+    icebreaker = "Say hi and ask what they are most excited about this term at Bath."
+    return AIMatchData(match_score=score, reason=reason, icebreaker=icebreaker)
+
+
 @app.get("/discovery/matches", response_model=list[MatchRead])
 async def list_my_matches(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[MatchRead]:
-    result = await db.execute(
+    user_profile = await db.get(Profile, current_user.id)
+    if not user_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current user must have a profile before discovery",
+        )
+
+    existing_result = await db.execute(
         select(Match).where(or_(Match.user1_id == current_user.id, Match.user2_id == current_user.id))
     )
-    matches = result.scalars().all()
-    return [MatchRead.model_validate(item) for item in matches]
+    existing_matches = existing_result.scalars().all()
+    existing_map: dict[tuple[int, int], Match] = {
+        (min(m.user1_id, m.user2_id), max(m.user1_id, m.user2_id)): m for m in existing_matches
+    }
+
+    candidates_result = await db.execute(select(Profile).where(Profile.user_id != current_user.id))
+    candidates = candidates_result.scalars().all()
+
+    has_new_records = False
+    has_updated_records = False
+    for candidate_profile in candidates:
+        pair_key = (min(current_user.id, candidate_profile.user_id), max(current_user.id, candidate_profile.user_id))
+        existing_match = existing_map.get(pair_key)
+        if existing_match is not None:
+            if existing_match.status == "suggested":
+                ai_data = local_discovery_score(user_profile, candidate_profile)
+                existing_match.match_score = ai_data.match_score
+                existing_match.ai_reason = ai_data.reason
+                existing_match.ai_icebreaker = ai_data.icebreaker
+                has_updated_records = True
+            continue
+
+        ai_data = local_discovery_score(user_profile, candidate_profile)
+        match = Match(
+            user1_id=pair_key[0],
+            user2_id=pair_key[1],
+            match_score=ai_data.match_score,
+            ai_reason=ai_data.reason,
+            ai_icebreaker=ai_data.icebreaker,
+            status="suggested",
+        )
+        db.add(match)
+        has_new_records = True
+
+    if has_new_records or has_updated_records:
+        await db.commit()
+
+    top_result = await db.execute(
+        select(Match)
+        .where(
+            and_(
+                or_(Match.user1_id == current_user.id, Match.user2_id == current_user.id),
+                Match.status == "suggested",
+            )
+        )
+        .order_by(Match.match_score.desc(), Match.id.desc())
+        .limit(3)
+    )
+    top_matches = top_result.scalars().all()
+    return [MatchRead.model_validate(item) for item in top_matches]

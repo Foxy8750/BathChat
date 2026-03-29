@@ -58,6 +58,7 @@ class ProfileRead(ProfileBase):
     user_id: int
     elo_score: int
     badge_tier: str
+    elo_rank: int
 
     model_config = {"from_attributes": True}
 
@@ -121,3 +122,15 @@ class EloLogRead(BaseModel):
     timestamp: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TopEloHolderRead(BaseModel):
+    user_id: int
+    name: str
+    elo_score: int
+    badge_tier: str
+    elo_rank: int
+
+
+class TopEloLeaderboardResponse(BaseModel):
+    top_holders: list[TopEloHolderRead]
