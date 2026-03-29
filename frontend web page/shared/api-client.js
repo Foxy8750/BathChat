@@ -1,17 +1,35 @@
 // Shared API Client Library
+const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8770';
+
 const API_CONFIG = {
-  baseUrl: localStorage.getItem('apiBaseUrl') || 'http://127.0.0.1:8770',
+  baseUrl: localStorage.getItem('apiBaseUrl') || DEFAULT_API_BASE_URL,
   userId: localStorage.getItem('userId') || '1'
 };
+
+function isValidHttpUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function normalizeBaseUrl(value) {
+  if (!value || !isValidHttpUrl(value)) return DEFAULT_API_BASE_URL;
+  return value.replace(/\/$/, '');
+}
 
 function getBaseUrl() {
   return API_CONFIG.baseUrl;
 }
 
 function setBaseUrl(url) {
-  API_CONFIG.baseUrl = url;
-  localStorage.setItem('apiBaseUrl', url);
-  document.getElementById('baseUrlDisplay')?.textContent = url;
+  const normalized = normalizeBaseUrl(url);
+  API_CONFIG.baseUrl = normalized;
+  localStorage.setItem('apiBaseUrl', normalized);
+  const baseUrlDisplay = document.getElementById('baseUrlDisplay');
+  if (baseUrlDisplay) baseUrlDisplay.textContent = normalized;
 }
 
 function getUserId() {
@@ -21,11 +39,12 @@ function getUserId() {
 function setUserId(id) {
   API_CONFIG.userId = id;
   localStorage.setItem('userId', id);
-  document.getElementById('userIdDisplay')?.textContent = id;
+  const userIdDisplay = document.getElementById('userIdDisplay');
+  if (userIdDisplay) userIdDisplay.textContent = id;
 }
 
 async function callApi({ method = 'GET', path = '', query = {}, body = null } = {}) {
-  const baseUrl = getBaseUrl();
+  let baseUrl = normalizeBaseUrl(getBaseUrl());
   const userId = getUserId();
   
   let url = `${baseUrl}${path}`;
@@ -45,8 +64,15 @@ async function callApi({ method = 'GET', path = '', query = {}, body = null } = 
   if (body) options.body = JSON.stringify(body);
   
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
     console.log('Making request:', { url, options });
-    const response = await fetch(url, options);
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
     console.log('Got response with status:', response.status);
     
     let data;
@@ -76,6 +102,48 @@ async function callApi({ method = 'GET', path = '', query = {}, body = null } = 
     
     return response.ok ? data : null;
   } catch (error) {
+    if (baseUrl !== DEFAULT_API_BASE_URL) {
+      // Auto-recover when a stale saved base URL breaks all frontend buttons.
+      try {
+        console.warn('Primary API URL failed, retrying default URL', { baseUrl, defaultUrl: DEFAULT_API_BASE_URL });
+        setBaseUrl(DEFAULT_API_BASE_URL);
+        baseUrl = DEFAULT_API_BASE_URL;
+
+        let retryUrl = `${baseUrl}${path}`;
+        if (queryStr) retryUrl += `?${queryStr}`;
+
+        const retryController = new AbortController();
+        const retryTimeoutId = setTimeout(() => retryController.abort(), 10000);
+        const retryResponse = await fetch(retryUrl, {
+          ...options,
+          signal: retryController.signal,
+        });
+        clearTimeout(retryTimeoutId);
+
+        let retryData;
+        const retryType = retryResponse.headers.get('content-type');
+        if (retryType && retryType.includes('application/json')) {
+          retryData = await retryResponse.json();
+        } else {
+          retryData = await retryResponse.text();
+        }
+
+        addOutput({
+          success: retryResponse.ok,
+          status: retryResponse.status,
+          method,
+          path,
+          url: retryUrl,
+          note: 'Recovered by switching API base URL to default.',
+          response: retryData,
+        });
+
+        return retryResponse.ok ? retryData : null;
+      } catch (retryError) {
+        console.error('Retry fetch error:', retryError);
+      }
+    }
+
     console.error('Fetch error:', error);
     addOutput({
       success: false,
@@ -110,6 +178,9 @@ function addOutput(obj) {
 }
 
 function clearOutput() {
-  const console = document.getElementById('apiOutput');
-  if (console) console.innerHTML = '';
+  const outputDiv = document.getElementById('apiOutput');
+  if (outputDiv) outputDiv.innerHTML = '';
 }
+
+// Normalize stored values at load time so all pages start with a valid API target.
+setBaseUrl(API_CONFIG.baseUrl);
