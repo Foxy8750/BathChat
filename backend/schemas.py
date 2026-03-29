@@ -26,7 +26,7 @@ class UserRead(BaseModel):
     id: int
     email: str
     name: str
-    elo_score: int
+    exp_points: int
     badge_tier: str
 
     model_config = {"from_attributes": True}
@@ -49,6 +49,7 @@ class ProfileUpsert(BaseModel):
     goals: str | None = None
     bio: str | None = None
 
+
 class IcebreakerProfile(BaseModel):
     name: str | None = Field(default=None, max_length=120)
     interests: list[str] = Field(default_factory=list)
@@ -58,11 +59,10 @@ class IcebreakerProfile(BaseModel):
     goals: str | None = None
     bio: str | None = None
 
-
-
 class MatchRequest(BaseModel):
     student_a: IcebreakerProfile
     student_b: IcebreakerProfile
+
 
 class ProfileBase(ProfileUpsert):
     pass
@@ -70,8 +70,9 @@ class ProfileBase(ProfileUpsert):
 
 class ProfileRead(ProfileBase):
     user_id: int
-    elo_score: int
+    exp_points: int
     badge_tier: str
+    exp_rank: int
 
     model_config = {"from_attributes": True}
 
@@ -80,6 +81,16 @@ class AIMatchData(BaseModel):
     match_score: float
     reason: str
     icebreaker: str
+
+
+class GameIdea(BaseModel):
+    game_type: str
+    ai_role: str
+    technical_execution: str
+
+
+class GameIdeasResponse(BaseModel):
+    games: list[GameIdea]
 
 
 class MatchRead(BaseModel):
@@ -94,7 +105,30 @@ class MatchRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class XPLogRead(BaseModel):
+class ConnectionRead(BaseModel):
+    match_id: int
+    user_id: int
+    name: str
+    status: str
+
+
+class ChatMessageCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=2000)
+    message_type: str = Field(default="text", max_length=40)
+
+
+class ChatMessageRead(BaseModel):
+    id: int
+    chat_id: int
+    sender_id: int
+    content: str
+    message_type: str
+    sent_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ExpLogRead(BaseModel):
     id: int
     user_id: int
     points: int
@@ -102,6 +136,18 @@ class XPLogRead(BaseModel):
     timestamp: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TopExpHolderRead(BaseModel):
+    user_id: int
+    name: str
+    exp_points: int
+    badge_tier: str
+    exp_rank: int
+
+
+class TopExpLeaderboardResponse(BaseModel):
+    top_holders: list[TopExpHolderRead]
 
 
 class UserXPResponse(BaseModel):

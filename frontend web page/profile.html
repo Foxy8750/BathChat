@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BathChat - Profile</title>
+  <link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html" class="logo">🛁 BathChat</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="auth.html">Auth</a></li>
+      <li><a href="profile.html" class="active">Profile</a></li>
+      <li><a href="discovery.html">Discovery</a></li>
+      <li><a href="connections.html">Connections</a></li>
+      <li><a href="leaderboard.html">Leaderboard</a></li>
+    </ul>
+    <div class="nav-right">
+      <div class="user-info">
+        User: <span id="userIdDisplay">1</span>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section>
+      <h1>Profile</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem;">View and update your profile information.</p>
+
+      <div class="cards-grid">
+        <form id="profileGetForm" style="grid-column: 1 / -1;">
+          <h3>View My Profile</h3>
+          <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">Retrieve your current profile data.</p>
+          <button type="submit">GET /profiles/me</button>
+        </form>
+
+        <form id="profileUpsertForm" style="grid-column: 1 / -1;">
+          <h3>Update Profile</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+            <div class="form-group">
+              <label>Name</label>
+              <input name="name" type="text" placeholder="Your name">
+            </div>
+            <div class="form-group">
+              <label>Course</label>
+              <input name="course" type="text" placeholder="e.g., Computer Science">
+            </div>
+            <div class="form-group">
+              <label>Accommodation</label>
+              <input name="accommodation" type="text" placeholder="e.g., Campus East">
+            </div>
+            <div class="form-group">
+              <label>Gender</label>
+              <input name="gender" type="text" placeholder="e.g., Female">
+            </div>
+            <div class="form-group">
+              <label>Ethnicity</label>
+              <input name="ethnicity" type="text" placeholder="e.g., Asian">
+            </div>
+            <div class="form-group">
+              <label>Spoken Language</label>
+              <input name="spoken_language" type="text" placeholder="e.g., English, Mandarin">
+            </div>
+            <div class="form-group">
+              <label>Interests</label>
+              <input name="interests" type="text" placeholder="Comma-separated list">
+            </div>
+            <div class="form-group">
+              <label>Societies</label>
+              <input name="societies" type="text" placeholder="Comma-separated list">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Goals</label>
+            <textarea name="goals" placeholder="What are your goals?" style="min-height: 100px;"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Bio</label>
+            <textarea name="bio" placeholder="Tell us about yourself" style="min-height: 120px;"></textarea>
+          </div>
+          <button type="submit">POST /profiles/me - Update Profile</button>
+        </form>
+      </div>
+
+      <h2 style="margin-top: 3rem; margin-bottom: 1rem;">Response Output</h2>
+      <div id="apiOutput"></div>
+    </section>
+  </main>
+
+  <script src="shared/api-client.js"></script>
+  <script>
+    document.getElementById('profileGetForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await callApi({ method: 'GET', path: '/profiles/me' });
+    });
+
+    document.getElementById('profileUpsertForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const body = {};
+      for (const [key, value] of fd.entries()) {
+        if (value.trim()) {
+          if (key === 'interests' || key === 'societies') {
+            body[key] = value.split(',').map(s => s.trim());
+          } else {
+            body[key] = value;
+          }
+        }
+      }
+      await callApi({
+        method: 'POST',
+        path: '/profiles/me',
+        body,
+      });
+    });
+
+    document.getElementById('userIdDisplay').textContent = getUserId();
+  </script>
+</body>
+</html>

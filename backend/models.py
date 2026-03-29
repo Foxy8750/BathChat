@@ -15,11 +15,11 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    elo_score: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
+    exp_points: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
     badge_tier: Mapped[str] = mapped_column(String(40), default="bronze", nullable=False)
 
     profile: Mapped["Profile"] = relationship(back_populates="user", uselist=False)
-    elo_logs: Mapped[list["EloLog"]] = relationship(back_populates="user")
+    exp_logs: Mapped[list["ExpLog"]] = relationship(back_populates="user")
 
 
 class Profile(Base):
@@ -52,8 +52,8 @@ class Match(Base):
     status: Mapped[str] = mapped_column(String(40), default="suggested", nullable=False)
 
 
-class EloLog(Base):
-    __tablename__ = "elo_logs"
+class ExpLog(Base):
+    __tablename__ = "exp_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -61,15 +61,13 @@ class EloLog(Base):
     reason: Mapped[str] = mapped_column(String(255), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    user: Mapped["User"] = relationship(back_populates="elo_logs")
+    user: Mapped["User"] = relationship(back_populates="exp_logs")
 
 class Chat(Base):
     __tablename__ = "chats"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user1_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    user2_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="chat", cascade="all, delete-orphan")
 

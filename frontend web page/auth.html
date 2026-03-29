@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BathChat - Authentication</title>
+  <link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html" class="logo">🛁 BathChat</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="auth.html" class="active">Auth</a></li>
+      <li><a href="profile.html">Profile</a></li>
+      <li><a href="discovery.html">Discovery</a></li>
+      <li><a href="connections.html">Connections</a></li>
+      <li><a href="leaderboard.html">Leaderboard</a></li>
+    </ul>
+    <div class="nav-right">
+      <div class="user-info">
+        User: <span id="userIdDisplay">1</span>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section>
+      <h1>Authentication</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem;">Register, login, and manage your account.</p>
+
+      <div class="cards-grid">
+        <form id="registerForm">
+          <h3>Register New Account</h3>
+          <div class="form-group">
+            <label>Email</label>
+            <input name="email" type="email" placeholder="email@bath.ac.uk" required>
+          </div>
+          <div class="form-group">
+            <label>Name</label>
+            <input name="name" type="text" placeholder="Your name" required>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input name="password" type="password" placeholder="Password" required>
+          </div>
+          <button type="submit">POST /auth/register</button>
+        </form>
+
+        <form id="loginForm">
+          <h3>Login</h3>
+          <div class="form-group">
+            <label>Email</label>
+            <input name="email" type="email" placeholder="email@bath.ac.uk" required>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input name="password" type="password" placeholder="Password" required>
+          </div>
+          <button type="submit">POST /auth/login</button>
+        </form>
+
+        <form id="meForm">
+          <h3>Get Current User</h3>
+          <p style="color: var(--text-secondary); font-size: 0.9rem;">Retrieves the current user's information using the X-User-Id header.</p>
+          <button type="submit">GET /auth/me</button>
+        </form>
+      </div>
+
+      <h2 style="margin-top: 3rem; margin-bottom: 1rem;">Response Output</h2>
+      <div id="apiOutput"></div>
+    </section>
+  </main>
+
+  <script src="shared/api-client.js"></script>
+  <script>
+    console.log('Auth page script loaded');
+    console.log('API client loaded:', typeof callApi);
+    
+    try {
+      const regForm = document.getElementById('registerForm');
+      console.log('Register form element:', regForm);
+      
+      if (regForm) {
+        regForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          console.log('Register form submitted');
+          const fd = new FormData(e.target);
+          await callApi({
+            method: 'POST',
+            path: '/auth/register',
+            body: {
+              email: fd.get('email'),
+              name: fd.get('name'),
+              password: fd.get('password'),
+            },
+          });
+        });
+      }
+
+      const loginForm = document.getElementById('loginForm');
+      console.log('Login form element:', loginForm);
+      
+      if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          console.log('Login form submitted');
+          const fd = new FormData(e.target);
+          await callApi({
+            method: 'POST',
+            path: '/auth/login',
+            body: {
+              email: fd.get('email'),
+              password: fd.get('password'),
+            },
+          });
+        });
+      }
+
+      const meForm = document.getElementById('meForm');
+      console.log('Me form element:', meForm);
+      
+      if (meForm) {
+        meForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          console.log('Me form submitted');
+          await callApi({ method: 'GET', path: '/auth/me' });
+        });
+      }
+
+      console.log('Auth page ready');
+      document.getElementById('userIdDisplay').textContent = getUserId();
+    } catch (err) {
+      console.error('Auth page error:', err);
+      alert('Auth page error: ' + err.message);
+    }
+  </script>
+</body>
+</html>

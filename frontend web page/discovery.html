@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BathChat - Discovery</title>
+  <link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html" class="logo">🛁 BathChat</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="auth.html">Auth</a></li>
+      <li><a href="profile.html">Profile</a></li>
+      <li><a href="discovery.html" class="active">Discovery</a></li>
+      <li><a href="connections.html">Connections</a></li>
+      <li><a href="leaderboard.html">Leaderboard</a></li>
+    </ul>
+    <div class="nav-right">
+      <div class="user-info">
+        User: <span id="userIdDisplay">1</span>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section>
+      <h1>Discovery</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem;">Find and match with interesting people to connect with.</p>
+
+      <div class="cards-grid">
+        <form id="discoveryMatchesForm">
+          <h3>Find Matches</h3>
+          <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">Get your top matches ranked by AI.</p>
+          <button type="submit">GET /discovery/matches</button>
+        </form>
+
+        <form id="discoveryMatchForm">
+          <h3>Rate a Match</h3>
+          <div class="form-group">
+            <label>Candidate ID</label>
+            <input name="candidate_id" type="number" min="1" placeholder="Enter candidate ID" required>
+          </div>
+          <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">Generate or refresh a match score for a specific candidate using AI.</p>
+          <button type="submit">POST /discovery/match/{candidate_id}</button>
+        </form>
+      </div>
+
+      <h2 style="margin-top: 3rem; margin-bottom: 1rem;">Response Output</h2>
+      <div id="apiOutput"></div>
+    </section>
+  </main>
+
+  <script src="shared/api-client.js"></script>
+  <script>
+    document.getElementById('discoveryMatchesForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await callApi({ method: 'GET', path: '/discovery/matches' });
+    });
+
+    document.getElementById('discoveryMatchForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const candidateId = fd.get('candidate_id');
+      await callApi({
+        method: 'POST',
+        path: `/discovery/match/${candidateId}`,
+      });
+    });
+
+    document.getElementById('userIdDisplay').textContent = getUserId();
+  </script>
+</body>
+</html>

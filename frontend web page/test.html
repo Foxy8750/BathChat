@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>BathChat - Debug Console</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
+    h1 { color: #62d0ff; }
+    button { background: #62d0ff; color: #000; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+    button:hover { background: #4db8e0; }
+    pre { background: #222; padding: 15px; border-radius: 4px; overflow-x: auto; max-height: 400px; overflow-y: auto; border: 1px solid #333; }
+    .success { color: #51cf66; }
+    .error { color: #ff6b6b; }
+    input { background: #222; color: #fff; border: 1px solid #333; padding: 8px; border-radius: 4px; color: #fff; margin-bottom: 10px; width: 300px; }
+  </style>
+</head>
+<body>
+  <h1>🛁 BathChat Debug Console</h1>
+  
+  <h2>Quick Tests</h2>
+  <button onclick="testGetMe()">Test GET /auth/me</button>
+  <button onclick="testLogin()">Test POST /auth/login</button>
+  <button onclick="testCors()">Test CORS Preflight</button>
+  <button onclick="clearLog()">Clear Log</button>
+  
+  <h2>Manual Request</h2>
+  <input type="text" id="endpoint" placeholder="/auth/me" value="/auth/me">
+  <button onclick="manualRequest()">Send Request</button>
+  
+  <h2>Debug Log</h2>
+  <pre id="log"></pre>
+
+  <script>
+    function log(msg, type = 'info') {
+      const el = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'error' : type === 'success' ? 'success' : '';
+      el.innerHTML += `<span class="${className}">[${time}] ${msg}</span>\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+    }
+
+    async function testGetMe() {
+      log('Testing GET /auth/me...', 'info');
+      const startTime = Date.now();
+      try {
+        log('  → Sending request with X-User-Id: 1');
+        const response = await fetch('http://127.0.0.1:8770/auth/me', {
+          method: 'GET',
+          headers: { 'X-User-Id': '1' },
+          mode: 'cors',
+          credentials: 'include'
+        });
+        const elapsed = Date.now() - startTime;
+        log(`  ✓ Got response after ${elapsed}ms: status ${response.status}`, response.ok ? 'success' : 'error');
+        const text = await response.text();
+        log(`  ✓ Response body length: ${text.length} bytes`);
+        if (text) {
+          try {
+            const data = JSON.parse(text);
+            log(`  ✓ Parsed JSON: ${JSON.stringify(data, null, 2)}`);
+          } catch (e) {
+            log(`  ! Response is not JSON: ${text.substring(0, 200)}`);
+          }
+        }
+      } catch (e) {
+        const elapsed = Date.now() - startTime;
+        log(`  ✗ Error after ${elapsed}ms: ${e.message}`, 'error');
+      }
+    }
+
+    async function testLogin() {
+      log('Testing POST /auth/login...', 'info');
+      const startTime = Date.now();
+      try {
+        log('  → Sending credentials test');
+        const response = await fetch('http://127.0.0.1:8770/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Id': '1' },
+          body: JSON.stringify({ email: 'test@test.com', password: 'test' }),
+          mode: 'cors',
+          credentials: 'include'
+        });
+        const elapsed = Date.now() - startTime;
+        log(`  ✓ Got response after ${elapsed}ms: status ${response.status}`, response.ok ? 'success' : 'error');
+        const data = await response.json();
+        log(`  → Response: ${JSON.stringify(data, null, 2)}`);
+      } catch (e) {
+        const elapsed = Date.now() - startTime;
+        log(`  ✗ Error after ${elapsed}ms: ${e.message}`, 'error');
+      }
+    }
+
+    async function testCors() {
+      log('Testing CORS by making a real GET request...', 'info');
+      const startTime = Date.now();
+      try {
+        log('  → Making GET request from port 5500 to 8770');
+        const response = await fetch('http://127.0.0.1:8770/docs', {
+          method: 'GET',
+          mode: 'cors'
+        });
+        const elapsed = Date.now() - startTime;
+        log(`  ✓ CORS check passed! Status: ${response.status} (${elapsed}ms)`, 'success');
+        log('  ✓ Browser allowed cross-origin request');
+        if (response.headers.get('access-control-allow-origin')) {
+          log(`  ✓ Server sent CORS header: ${response.headers.get('access-control-allow-origin')}`);
+        }
+      } catch (e) {
+        const elapsed = Date.now() - startTime;
+        log(`  ✗ CORS blocked! Error after ${elapsed}ms: ${e.message}`, 'error');
+      }
+    }
+
+    async function manualRequest() {
+      const endpoint = document.getElementById('endpoint').value;
+      log(`Sending GET ${endpoint}...`, 'info');
+      const startTime = Date.now();
+      try {
+        log(`  → URL: http://127.0.0.1:8770${endpoint}`);
+        const response = await fetch(`http://127.0.0.1:8770${endpoint}`, {
+          method: 'GET',
+          headers: { 'X-User-Id': '1' },
+          mode: 'cors',
+          credentials: 'include'
+        });
+        const elapsed = Date.now() - startTime;
+        log(`  ✓ Status: ${response.status} (${elapsed}ms)`, response.ok ? 'success' : 'error');
+        const text = await response.text();
+        log(`  ✓ Body length: ${text.length} bytes`);
+        if (text) {
+          try {
+            const data = JSON.parse(text);
+            log(`  ✓ Parsed: ${JSON.stringify(data, null, 2)}`);
+          } catch (e) {
+            log(`  → Raw response: ${text.substring(0, 500)}`);
+          }
+        }
+      } catch (e) {
+        const elapsed = Date.now() - startTime;
+        log(`  ✗ Error after ${elapsed}ms: ${e.message}`, 'error');
+      }
+    }
+
+    window.onload = () => {
+      log('Debug console loaded!', 'success');
+      log('Frontend: http://127.0.0.1:5500');
+      log('Backend: http://127.0.0.1:8770');
+    };
+  </script>
+</body>
+</html>
