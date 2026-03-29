@@ -1,17 +1,21 @@
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
+from typing import Iterable
 
-import httpx
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import Base, engine, get_db
-from backend.models import Chat, Match, Message, Profile, User
+from backend.exp import award_xp
+from backend.models import Chat, FriendRequest, Match, Message, Profile, User
 from backend.schemas import (
     AIMatchData,
     ChatMessageCreate,
@@ -22,19 +26,26 @@ from backend.schemas import (
     MatchRead,
     ProfileRead,
     ProfileUpsert,
-    TopEloHolderRead,
-    TopEloLeaderboardResponse,
     TokenResponse,
+    TopExpHolderRead,
+    TopExpLeaderboardResponse,
     UserCreate,
     UserLogin,
     UserRead,
 )
 
-GEMINI_API_KEY = "AIzaSyDNvViMd10UcfDA01Mo0vF9ISXBZpsoIeQ"
-GEMINI_MODEL = "gemini-1.5-flash"
+load_dotenv()
 
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("API_KEY")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_APP_URL = os.getenv("OPENROUTER_APP_URL", "http://localhost")
+OPENROUTER_APP_TITLE = os.getenv("OPENROUTER_APP_TITLE", "BathChat")
 
 app = FastAPI(title="BathChat API")
+
+DISCOVERY_SHORTLIST_SIZE = 10
+DISCOVERY_RETURN_SIZE = 3
 
 
 def get_cors_origins() -> list[str]:
@@ -42,7 +53,6 @@ def get_cors_origins() -> list[str]:
     if configured.strip():
         return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
-    # Safe defaults for local dev plus Firebase Hosting previews/live.
     return [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -86,13 +96,6 @@ async def get_current_user(
     return user
 
 
-# SentenceTransformer path intentionally disabled per request.
-# _embedding_model = None
-# _sentence_transformers_ready = True
-# def get_embedding_model():
-#     ...
-
-
 def normalize_exact_value(value: str | None) -> str:
     if not value:
         return ""
@@ -105,233 +108,183 @@ def exact_overlap_count(items_a: list[str] | None, items_b: list[str] | None) ->
     return len(set_a & set_b)
 
 
-async def get_user_elo_rank(db: AsyncSession, user: User) -> int:
-    result = await db.execute(select(func.count()).where(User.elo_score > user.elo_score))
+async def get_user_exp_rank(db: AsyncSession, user: User) -> int:
+    result = await db.execute(select(func.count()).where(User.exp_points > user.exp_points))
     higher_count = int(result.scalar_one() or 0)
     return higher_count + 1
 
 
-def extract_json_payload(raw_text: str) -> dict:
-    stripped = raw_text.strip()
-    if stripped.startswith("```"):
-        stripped = stripped.strip("`")
-        if stripped.startswith("json"):
-            stripped = stripped[4:].strip()
-
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError:
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return json.loads(stripped[start : end + 1])
-        raise
+def clean_list(values: Iterable[str] | None) -> list[str]:
+    return [v.strip() for v in (values or []) if v and v.strip()]
 
 
-async def call_gemini_json(prompt: str, fallback: dict) -> dict:
-    if not GEMINI_API_KEY:
-        return fallback
-
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
-        f"?key={GEMINI_API_KEY}"
-    )
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.2,
-            "responseMimeType": "application/json",
-        },
+def ai_profile_payload(profile: Profile) -> dict:
+    return {
+        "name": profile.name,
+        "interests": clean_list(profile.interests),
+        "course": profile.course,
+        "accommodation": profile.accommodation,
+        "spoken_language": profile.spoken_language,
+        "societies": clean_list(profile.societies),
+        "goals": profile.goals,
+        "bio": profile.bio,
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            text_part = (
-                data.get("candidates", [{}])[0]
-                .get("content", {})
-                .get("parts", [{}])[0]
-                .get("text", "")
-            )
-            if not text_part:
-                return fallback
-            parsed = extract_json_payload(text_part)
-            return parsed if isinstance(parsed, dict) else fallback
-    except Exception:
-        return fallback
+
+def profile_text_for_embedding(profile: Profile) -> str:
+    bits: list[str] = []
+    interests = clean_list(profile.interests)
+    societies = clean_list(profile.societies)
+
+    if profile.course:
+        bits.append(f"Course: {profile.course}")
+    if interests:
+        bits.append(f"Interests: {', '.join(interests)}")
+    if societies:
+        bits.append(f"Societies: {', '.join(societies)}")
+    if profile.spoken_language:
+        bits.append(f"Language: {profile.spoken_language}")
+    if profile.accommodation:
+        bits.append(f"Accommodation: {profile.accommodation}")
+    if profile.goals:
+        bits.append(f"Goals: {profile.goals}")
+    if profile.bio:
+        bits.append(f"Bio: {profile.bio}")
+
+    return "\n".join(bits)
 
 
-async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> AIMatchData:
-    """Gemini-powered match scoring."""
+def dot(a: list[float], b: list[float]) -> float:
+    return sum(x * y for x, y in zip(a, b))
 
-    prompt = {
-        "user1": {
-            "name": user1_profile.name,
-            "interests": user1_profile.interests,
-            "course": user1_profile.course,
-            "accommodation": user1_profile.accommodation,
-            "ethnicity": user1_profile.ethnicity,
-            "gender": user1_profile.gender,
-            "spoken_language": user1_profile.spoken_language,
-            "societies": user1_profile.societies,
-            "goals": user1_profile.goals,
-            "bio": user1_profile.bio,
-        },
-        "user2": {
-            "name": user2_profile.name,
-            "interests": user2_profile.interests,
-            "course": user2_profile.course,
-            "accommodation": user2_profile.accommodation,
-            "ethnicity": user2_profile.ethnicity,
-            "gender": user2_profile.gender,
-            "spoken_language": user2_profile.spoken_language,
-            "societies": user2_profile.societies,
-            "goals": user2_profile.goals,
-            "bio": user2_profile.bio,
-        },
-    }
 
-    fallback = {
-        "match_score": 50.0,
-        "reason": "Shared university interests and compatible social goals.",
-        "icebreaker": "What is one Bath campus spot you would both recommend?",
-    }
+def norm(v: list[float]) -> float:
+    return math.sqrt(sum(x * x for x in v))
 
-    gemini_prompt = (
-        "Return ONLY valid JSON object with keys: match_score (0-100 number), reason (string), "
-        "icebreaker (string). Use profile compatibility based on interests, course, societies, goals and bio. "
-        f"Input profiles: {json.dumps(prompt)}"
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    denom = norm(a) * norm(b)
+    if denom == 0:
+        return 0.0
+    return dot(a, b) / denom
+
+
+def local_discovery_score(user_profile: Profile, candidate_profile: Profile) -> AIMatchData:
+    shared_interests = exact_overlap_count(user_profile.interests, candidate_profile.interests)
+    shared_societies = exact_overlap_count(user_profile.societies, candidate_profile.societies)
+
+    same_course = bool(
+        normalize_exact_value(user_profile.course)
+        and normalize_exact_value(user_profile.course) == normalize_exact_value(candidate_profile.course)
     )
-    parsed = await call_gemini_json(gemini_prompt, fallback)
 
-    try:
-        return AIMatchData(
-            match_score=float(parsed.get("match_score", fallback["match_score"])),
-            reason=str(parsed.get("reason", fallback["reason"])),
-            icebreaker=str(parsed.get("icebreaker", fallback["icebreaker"])),
-        )
-    except (TypeError, ValueError):
-        pass
+    score = 20 + (shared_interests * 12) + (shared_societies * 10) + (8 if same_course else 0)
+    score = float(max(0, min(100, score)))
 
-    # Deterministic fallback if Gemini output is malformed or unavailable.
-    shared_interests = exact_overlap_count(user1_profile.interests, user2_profile.interests)
-    shared_societies = exact_overlap_count(user1_profile.societies, user2_profile.societies)
+    parts: list[str] = []
+    if shared_interests:
+        parts.append(f"{shared_interests} common interest{'s' if shared_interests != 1 else ''}")
+    if shared_societies:
+        parts.append(f"{shared_societies} common societ{'ies' if shared_societies != 1 else 'y'}")
+    if same_course:
+        parts.append("same course")
 
-    course_1 = normalize_exact_value(user1_profile.course)
-    course_2 = normalize_exact_value(user2_profile.course)
-    same_course_exact = bool(course_1 and course_2 and course_1 == course_2)
-
-    score = (
-        15.0
-        + (shared_interests * 12.0)
-        + (shared_societies * 10.0)
-        + (shared_interests * 8.0)
-        + (shared_societies * 7.0)
-        + (10.0 if same_course_exact else 0.0)
-    )
-    score = max(0.0, min(100.0, score))
-
-    reason_parts: list[str] = []
-    if shared_interests > 0:
-        reason_parts.append(f"{shared_interests} common interest{'s' if shared_interests != 1 else ''}")
-    if shared_societies > 0:
-        reason_parts.append(f"{shared_societies} common societ{'ies' if shared_societies != 1 else 'y'}")
-    if same_course_exact:
-        reason_parts.append("same course")
-
-    if reason_parts:
-        reason = f"You have {', '.join(reason_parts)}."
-    else:
-        reason = "No exact overlap found yet, but there is still a chance to connect."
-
-    icebreaker = "You both seem aligned. Want to swap your favorite student event this term?"
+    reason = f"You share {', '.join(parts)}." if parts else "Potential match based on profile similarity."
+    icebreaker = "Say hi and ask what they are most excited about this term at Bath."
     return AIMatchData(match_score=score, reason=reason, icebreaker=icebreaker)
 
 
-@app.get("/games/ideas/{candidate_id}", response_model=GameIdeasResponse)
-async def generate_game_ideas(
-    candidate_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> GameIdeasResponse:
-    candidate = await db.get(User, candidate_id)
-    if not candidate:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+async def embedding_similarity(text1: str, text2: str) -> float:
+    _ = text1, text2
+    return 0.0
 
-    user_profile = await db.get(Profile, current_user.id)
-    candidate_profile = await db.get(Profile, candidate_id)
-    if not user_profile or not candidate_profile:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Both users must have profiles before generating games",
-        )
 
-    profile_context = {
-        "user1": {
-            "name": user_profile.name,
-            "interests": user_profile.interests,
-            "course": user_profile.course,
-            "societies": user_profile.societies,
-            "goals": user_profile.goals,
-            "bio": user_profile.bio,
-        },
-        "user2": {
-            "name": candidate_profile.name,
-            "interests": candidate_profile.interests,
-            "course": candidate_profile.course,
-            "societies": candidate_profile.societies,
-            "goals": candidate_profile.goals,
-            "bio": candidate_profile.bio,
-        },
+async def compute_match_score(user1_profile: Profile, user2_profile: Profile) -> float:
+    local = local_discovery_score(user1_profile, user2_profile)
+    return local.match_score
+
+
+def extract_json_payload(raw_text: str) -> dict | None:
+    text = raw_text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:].strip()
+
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                parsed = json.loads(text[start : end + 1])
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                return None
+        return None
+
+
+async def call_openrouter_json(prompt: str, temperature: float = 0.2) -> dict | None:
+    if not OPENROUTER_API_KEY:
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": OPENROUTER_APP_URL,
+        "X-OpenRouter-Title": OPENROUTER_APP_TITLE,
+    }
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
     }
 
-    fallback_games = {
-        "games": [
-            {
-                "game_type": "20 Questions",
-                "ai_role": "AI picks an object related to both users' interests and judges guesses.",
-                "technical_execution": "Store game_state in games table; each message is checked for win condition.",
-            },
-            {
-                "game_type": "Would You Rather",
-                "ai_role": "AI generates funny, polarizing options tailored to both users.",
-                "technical_execution": "Save both choices in DB and compute a compatibility delta.",
-            },
-            {
-                "game_type": "Emoji Story",
-                "ai_role": "AI gives a prompt and later translates/rates the emoji-only story.",
-                "technical_execution": "Persist turns and final AI translation + humour score.",
-            },
-        ]
-    }
-
-    games_prompt = (
-        "Return ONLY valid JSON object: {\"games\":[{\"game_type\":...,\"ai_role\":...,\"technical_execution\":...}]} "
-        "with exactly 3 games similar in style to: 20 Questions, Would You Rather, Emoji Story. "
-        "Tailor ideas to these two users' shared profile attributes. "
-        f"Profiles: {json.dumps(profile_context)}"
-    )
-    parsed = await call_gemini_json(games_prompt, fallback_games)
-
-    raw_games = parsed.get("games", []) if isinstance(parsed, dict) else []
-    games: list[GameIdea] = []
-    for item in raw_games[:3]:
-        if not isinstance(item, dict):
-            continue
-        games.append(
-            GameIdea(
-                game_type=str(item.get("game_type", "")),
-                ai_role=str(item.get("ai_role", "")),
-                technical_execution=str(item.get("technical_execution", "")),
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.post(OPENROUTER_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
             )
-        )
+            if not content:
+                return None
+            return extract_json_payload(content)
+    except Exception:
+        return None
 
-    if len(games) < 3:
-        games = [GameIdea(**x) for x in fallback_games["games"]]
 
-    return GameIdeasResponse(games=games)
+async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> AIMatchData:
+    fallback = local_discovery_score(user1_profile, user2_profile)
+
+    prompt = (
+        "Return ONLY valid JSON object with keys: match_score (0-100 number), reason (string), "
+        "icebreaker (string).\n"
+        "Use profile compatibility based on interests, course, societies, goals, language and bio.\n"
+        "Keep reason to one sentence, warm and non-romantic. Keep icebreaker to one sentence.\n"
+        f"Student 1: {json.dumps(ai_profile_payload(user1_profile), ensure_ascii=True)}\n"
+        f"Student 2: {json.dumps(ai_profile_payload(user2_profile), ensure_ascii=True)}\n"
+        f"Baseline local score: {fallback.match_score:.1f}"
+    )
+
+    parsed = await call_openrouter_json(prompt)
+    if not parsed:
+        return fallback
+
+    try:
+        score = float(parsed.get("match_score", fallback.match_score))
+        score = max(0.0, min(100.0, score))
+    except Exception:
+        score = fallback.match_score
+
+    reason = str(parsed.get("reason", "")).strip() or fallback.reason
+    icebreaker = str(parsed.get("icebreaker", "")).strip() or fallback.icebreaker
+    return AIMatchData(match_score=score, reason=reason, icebreaker=icebreaker)
 
 
 async def get_connection_match(db: AsyncSession, user_id: int, other_user_id: int) -> Match | None:
@@ -503,16 +456,36 @@ async def get_recent_chat_history(
 async def on_startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Add profile fields to profiles table (not to users - they have elo_score and badge_tier in User model)
+
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS name VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS course VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS accommodation VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ethnicity VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS gender VARCHAR(60)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spoken_language VARCHAR(120)"))
-        # Ensure users table has elo_score and badge_tier (defined in User model)
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS elo_score INTEGER NOT NULL DEFAULT 500"))
+
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS exp_points INTEGER NOT NULL DEFAULT 500"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS badge_tier VARCHAR(40) NOT NULL DEFAULT 'bronze'"))
+        await conn.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'users' AND column_name = 'elo_score'
+                    ) THEN
+                        UPDATE users
+                        SET exp_points = elo_score
+                        WHERE exp_points = 500 AND elo_score <> 500;
+                    END IF;
+                END
+                $$;
+                """
+            )
+        )
+
         await conn.execute(
             text(
                 """
@@ -525,22 +498,14 @@ async def on_startup() -> None:
             )
         )
 
-@app.post("/auth/login")
-async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
-    print(f"DEBUG: Login attempt for email: '{payload.email}'") # Check for hidden spaces
 
+@app.post("/auth/login")
+async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     result = await db.execute(select(User).where(User.email == payload.email.strip().lower()))
     user = result.scalar_one_or_none()
 
-    if not user:
-        print("DEBUG: User NOT found in database.") # Error 1: Email is wrong
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if not verify_password(payload.password, user.hashed_password):
-        print(f"DEBUG: Password mismatch for user {user.email}") # Error 2: Hashing is wrong
-        print(f"DEBUG: Received password: {payload.password}")
-        print(f"DEBUG: Stored hash: {user.hashed_password}")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     return TokenResponse(access_token=f"user-{user.id}")
 
@@ -563,16 +528,14 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)) -> U
 
     await db.commit()
     await db.refresh(user)
+
     return UserRead(
         id=user.id,
         email=user.email,
         name=payload.name,
-        elo_score=user.elo_score,
+        exp_points=user.exp_points,
         badge_tier=user.badge_tier,
     )
-
-
-
 
 
 @app.get("/auth/me", response_model=UserRead)
@@ -582,11 +545,12 @@ async def me(
 ) -> UserRead:
     profile = await db.get(Profile, current_user.id)
     display_name = profile.name if profile and profile.name else ""
+
     return UserRead(
         id=current_user.id,
         email=current_user.email,
         name=display_name,
-        elo_score=current_user.elo_score,
+        exp_points=current_user.exp_points,
         badge_tier=current_user.badge_tier,
     )
 
@@ -615,7 +579,8 @@ async def upsert_my_profile(
 
     await db.commit()
     await db.refresh(profile)
-    elo_rank = await get_user_elo_rank(db, current_user)
+
+    exp_rank = await get_user_exp_rank(db, current_user)
     return ProfileRead(
         user_id=profile.user_id,
         name=profile.name,
@@ -628,9 +593,9 @@ async def upsert_my_profile(
         societies=profile.societies,
         goals=profile.goals,
         bio=profile.bio,
-        elo_score=current_user.elo_score,
+        exp_points=current_user.exp_points,
         badge_tier=current_user.badge_tier,
-        elo_rank=elo_rank,
+        exp_rank=exp_rank,
     )
 
 
@@ -642,7 +607,8 @@ async def get_my_profile(
     profile = await db.get(Profile, current_user.id)
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-    elo_rank = await get_user_elo_rank(db, current_user)
+
+    exp_rank = await get_user_exp_rank(db, current_user)
     return ProfileRead(
         user_id=profile.user_id,
         name=profile.name,
@@ -655,36 +621,36 @@ async def get_my_profile(
         societies=profile.societies,
         goals=profile.goals,
         bio=profile.bio,
-        elo_score=current_user.elo_score,
+        exp_points=current_user.exp_points,
         badge_tier=current_user.badge_tier,
-        elo_rank=elo_rank,
+        exp_rank=exp_rank,
     )
 
 
-@app.get("/leaderboard/top-elo", response_model=TopEloLeaderboardResponse)
-async def get_top_elo_holders(
+@app.get("/leaderboard/top-exp", response_model=TopExpLeaderboardResponse)
+async def get_top_exp_holders(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> TopEloLeaderboardResponse:
+) -> TopExpLeaderboardResponse:
     _ = current_user
-    result = await db.execute(select(User).order_by(User.elo_score.desc(), User.id.asc()).limit(5))
+    result = await db.execute(select(User).order_by(User.exp_points.desc(), User.id.asc()).limit(5))
     users = result.scalars().all()
 
-    holders: list[TopEloHolderRead] = []
+    holders: list[TopExpHolderRead] = []
     for user in users:
-        rank = await get_user_elo_rank(db, user)
+        rank = await get_user_exp_rank(db, user)
         profile = await db.get(Profile, user.id)
         holders.append(
-            TopEloHolderRead(
+            TopExpHolderRead(
                 user_id=user.id,
                 name=profile.name if profile and profile.name else f"User {user.id}",
-                elo_score=user.elo_score,
+                exp_points=user.exp_points,
                 badge_tier=user.badge_tier,
-                elo_rank=rank,
+                exp_rank=rank,
             )
         )
 
-    return TopEloLeaderboardResponse(top_holders=holders)
+    return TopExpLeaderboardResponse(top_holders=holders)
 
 
 @app.post("/discovery/match/{candidate_id}", response_model=MatchRead)
@@ -717,11 +683,11 @@ async def discover_match(
         )
     )
     old_match = existing.scalar_one_or_none()
-    ai_data = await get_ai_match_data(user_profile, candidate_profile)
 
+    ai_data = await get_ai_match_data(user_profile, candidate_profile)
     user1_id, user2_id = sorted([current_user.id, candidate_id])
+
     if old_match:
-        # Recompute and update existing match so profile edits are reflected immediately.
         old_match.match_score = ai_data.match_score
         old_match.ai_reason = ai_data.reason
         old_match.ai_icebreaker = ai_data.icebreaker
@@ -736,33 +702,10 @@ async def discover_match(
             status="suggested",
         )
         db.add(match)
+
     await db.commit()
     await db.refresh(match)
     return MatchRead.model_validate(match)
-
-
-def local_discovery_score(user_profile: Profile, candidate_profile: Profile) -> AIMatchData:
-    shared_interests = exact_overlap_count(user_profile.interests, candidate_profile.interests)
-    shared_societies = exact_overlap_count(user_profile.societies, candidate_profile.societies)
-    same_course = bool(
-        normalize_exact_value(user_profile.course)
-        and normalize_exact_value(user_profile.course) == normalize_exact_value(candidate_profile.course)
-    )
-
-    score = 20 + (shared_interests * 12) + (shared_societies * 10) + (8 if same_course else 0)
-    score = float(max(0, min(100, score)))
-
-    parts: list[str] = []
-    if shared_interests:
-        parts.append(f"{shared_interests} common interest{'s' if shared_interests != 1 else ''}")
-    if shared_societies:
-        parts.append(f"{shared_societies} common societ{'ies' if shared_societies != 1 else 'y'}")
-    if same_course:
-        parts.append("same course")
-
-    reason = f"You share {', '.join(parts)}." if parts else "Potential match based on profile similarity."
-    icebreaker = "Say hi and ask what they are most excited about this term at Bath."
-    return AIMatchData(match_score=score, reason=reason, icebreaker=icebreaker)
 
 
 @app.get("/discovery/matches", response_model=list[MatchRead])
@@ -778,55 +721,231 @@ async def list_my_matches(
         )
 
     existing_result = await db.execute(
-        select(Match).where(or_(Match.user1_id == current_user.id, Match.user2_id == current_user.id))
+        select(Match).where(
+            or_(Match.user1_id == current_user.id, Match.user2_id == current_user.id)
+        )
     )
     existing_matches = existing_result.scalars().all()
-    existing_map: dict[tuple[int, int], Match] = {
-        (min(m.user1_id, m.user2_id), max(m.user1_id, m.user2_id)): m for m in existing_matches
+
+    connected_user_ids: set[int] = set()
+    for item in existing_matches:
+        if item.status != "connected":
+            continue
+        other_id = item.user2_id if item.user1_id == current_user.id else item.user1_id
+        connected_user_ids.add(other_id)
+
+    candidate_result = await db.execute(select(Profile).where(Profile.user_id != current_user.id))
+    candidates = candidate_result.scalars().all()
+
+    # Run AI matching for all eligible candidates (no local ranking).
+    ai_ranked_matches: list[MatchRead] = []
+    for candidate_profile in candidates:
+        candidate_id = candidate_profile.user_id
+        if candidate_id in connected_user_ids:
+            continue
+        ai_ranked_matches.append(
+            await discover_match(
+                candidate_id=candidate_id,
+                current_user=current_user,
+                db=db,
+            )
+        )
+
+    ai_ranked_matches.sort(key=lambda m: (m.match_score, m.id), reverse=True)
+    return ai_ranked_matches[:DISCOVERY_RETURN_SIZE]
+
+
+@app.get("/games/ideas/{candidate_id}", response_model=GameIdeasResponse)
+async def generate_game_ideas(
+    candidate_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> GameIdeasResponse:
+    candidate = await db.get(User, candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+
+    user_profile = await db.get(Profile, current_user.id)
+    candidate_profile = await db.get(Profile, candidate_id)
+    if not user_profile or not candidate_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both users must have profiles before generating games",
+        )
+
+    fallback_games = [
+        GameIdea(
+            game_type="20 Questions",
+            ai_role="AI picks an object related to both users' interests and judges guesses.",
+            technical_execution="Store game_state in games table; each message is checked for win condition.",
+        ),
+        GameIdea(
+            game_type="Would You Rather",
+            ai_role="AI generates funny, polarizing options tailored to both users.",
+            technical_execution="Save both choices in DB and compute a compatibility delta.",
+        ),
+        GameIdea(
+            game_type="Emoji Story",
+            ai_role="AI gives a prompt and later translates/rates the emoji-only story.",
+            technical_execution="Persist turns and final AI translation + humour score.",
+        ),
+    ]
+
+    if not OPENROUTER_API_KEY:
+        return GameIdeasResponse(games=fallback_games)
+
+    prompt = (
+        "Return ONLY valid JSON with this structure: "
+        '{"games":[{"game_type":"...","ai_role":"...","technical_execution":"..."}]}. '
+        "Provide exactly 3 game ideas similar in style to 20 Questions, Would You Rather, and Emoji Story. "
+        "Tailor ideas to these two students.\n"
+        f"Student 1: {ai_profile_payload(user_profile)}\n"
+        f"Student 2: {ai_profile_payload(candidate_profile)}"
+    )
+
+    try:
+        parsed = await call_openrouter_json(prompt, temperature=0.6)
+        if not parsed:
+            return GameIdeasResponse(games=fallback_games)
+        raw_games = parsed.get("games", []) if isinstance(parsed, dict) else []
+
+        games: list[GameIdea] = []
+        for item in raw_games[:3]:
+            if not isinstance(item, dict):
+                continue
+            games.append(
+                GameIdea(
+                    game_type=str(item.get("game_type", "")).strip(),
+                    ai_role=str(item.get("ai_role", "")).strip(),
+                    technical_execution=str(item.get("technical_execution", "")).strip(),
+                )
+            )
+
+        if len(games) == 3 and all(g.game_type and g.ai_role and g.technical_execution for g in games):
+            return GameIdeasResponse(games=games)
+    except Exception:
+        pass
+
+    return GameIdeasResponse(games=fallback_games)
+
+
+@app.post("/messages/send")
+async def send_message_for_xp(
+    recipient_id: int,
+    content: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    recipient = await db.get(User, recipient_id)
+    if not recipient:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+
+    if len(content.strip()) >= 10:
+        await award_xp(db, current_user, 1)
+
+    return {
+        "detail": "Message sent",
+        "exp_points": current_user.exp_points,
+        "badge_tier": current_user.badge_tier,
     }
 
-    candidates_result = await db.execute(select(Profile).where(Profile.user_id != current_user.id))
-    candidates = candidates_result.scalars().all()
 
-    has_new_records = False
-    has_updated_records = False
-    for candidate_profile in candidates:
-        pair_key = (min(current_user.id, candidate_profile.user_id), max(current_user.id, candidate_profile.user_id))
-        existing_match = existing_map.get(pair_key)
-        if existing_match is not None:
-            if existing_match.status == "suggested":
-                ai_data = local_discovery_score(user_profile, candidate_profile)
-                existing_match.match_score = ai_data.match_score
-                existing_match.ai_reason = ai_data.reason
-                existing_match.ai_icebreaker = ai_data.icebreaker
-                has_updated_records = True
-            continue
+@app.post("/friends/request/{receiver_id}")
+async def send_friend_request(
+    receiver_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if receiver_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot friend yourself")
 
-        ai_data = local_discovery_score(user_profile, candidate_profile)
+    receiver = await db.get(User, receiver_id)
+    if not receiver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+
+    existing = await db.execute(
+        select(FriendRequest).where(
+            or_(
+                and_(
+                    FriendRequest.sender_id == current_user.id,
+                    FriendRequest.receiver_id == receiver_id,
+                ),
+                and_(
+                    FriendRequest.sender_id == receiver_id,
+                    FriendRequest.receiver_id == current_user.id,
+                ),
+            )
+        )
+    )
+    old_request = existing.scalar_one_or_none()
+    if old_request:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Friend request already exists")
+
+    request = FriendRequest(
+        sender_id=current_user.id,
+        receiver_id=receiver_id,
+        status="pending",
+    )
+    db.add(request)
+    await db.commit()
+    await db.refresh(request)
+
+    return {"detail": "Friend request sent", "request_id": request.id}
+
+
+@app.post("/friends/request/{request_id}/accept")
+async def accept_friend_request(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(FriendRequest).where(FriendRequest.id == request_id))
+    request = result.scalar_one_or_none()
+
+    if not request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Friend request not found")
+    if request.receiver_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
+    if request.status == "accepted":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Already accepted")
+
+    sender = await db.get(User, request.sender_id)
+    receiver = await db.get(User, request.receiver_id)
+    if not sender or not receiver:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    request.status = "accepted"
+
+    match = await get_connection_match(db, sender.id, receiver.id)
+    if not match:
+        sender_profile = await db.get(Profile, sender.id)
+        receiver_profile = await db.get(Profile, receiver.id)
+
+        if not sender_profile or not receiver_profile:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Both users must have profiles before connecting",
+            )
+
+        ai_data = await get_ai_match_data(sender_profile, receiver_profile)
+        user1_id, user2_id = sorted([sender.id, receiver.id])
         match = Match(
-            user1_id=pair_key[0],
-            user2_id=pair_key[1],
+            user1_id=user1_id,
+            user2_id=user2_id,
             match_score=ai_data.match_score,
             ai_reason=ai_data.reason,
             ai_icebreaker=ai_data.icebreaker,
-            status="suggested",
+            status="connected",
         )
         db.add(match)
-        has_new_records = True
+        await db.flush()
+    else:
+        match.status = "connected"
 
-    if has_new_records or has_updated_records:
-        await db.commit()
+    await get_or_create_chat(db, match.id)
+    await db.commit()
 
-    top_result = await db.execute(
-        select(Match)
-        .where(
-            and_(
-                or_(Match.user1_id == current_user.id, Match.user2_id == current_user.id),
-                Match.status == "suggested",
-            )
-        )
-        .order_by(Match.match_score.desc(), Match.id.desc())
-        .limit(3)
-    )
-    top_matches = top_result.scalars().all()
-    return [MatchRead.model_validate(item) for item in top_matches]
+    await award_xp(db, sender, 5)
+    await award_xp(db, receiver, 1)
+
+    return {"detail": "Friend request accepted"}

@@ -1,15 +1,14 @@
 package com.example.bathchat;
 
 import android.os.Bundle;
-import com.google.android.material.bottomnavigation.BottomNavigationView;
+import android.widget.LinearLayout;
+
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.navigation.NavController;
-import androidx.navigation.Navigation;
+import androidx.navigation.fragment.NavHostFragment;
 import androidx.navigation.ui.AppBarConfiguration;
 import androidx.navigation.ui.NavigationUI;
 import com.example.bathchat.databinding.ActivityMainBinding;
-import androidx.appcompat.widget.Toolbar;
-import com.google.android.material.tabs.TabLayout;
 
 public class MainActivity extends AppCompatActivity {
     private ActivityMainBinding binding;
@@ -20,27 +19,29 @@ public class MainActivity extends AppCompatActivity {
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        // Update this list to exactly match your 4 menu IDs
-        AppBarConfiguration appBarConfiguration = new AppBarConfiguration.Builder(
-                R.id.navigation_discover,
-                R.id.navigation_messages,
-                R.id.navigation_community,
-                R.id.navigation_profile)
-                .build();
+        // Use the FragmentManager to find the NavHostFragment
+        NavHostFragment navHostFragment = (NavHostFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.nav_host_fragment_activity_main);
 
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-        getSupportActionBar().setDisplayShowTitleEnabled(false);
+        // Inside onCreate, replace your Navigation setup with this "Safe" version
+        if (navHostFragment != null) {
+            NavController navController = navHostFragment.getNavController();
 
-        // Tab setup goes here
-        TabLayout tabLayout = findViewById(R.id.tabLayout);
-        tabLayout.addTab(tabLayout.newTab().setText("For You"));
-        tabLayout.addTab(tabLayout.newTab().setText("Trending"));
-        tabLayout.addTab(tabLayout.newTab().setText("Societies"));
-        tabLayout.addTab(tabLayout.newTab().setText("Events"));
+            AppBarConfiguration appBarConfiguration = new AppBarConfiguration.Builder(
+                    R.id.navigation_discover, R.id.navigation_messages,
+                    R.id.navigation_community, R.id.navigation_profile)
+                    .build();
 
-        NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_activity_main);
-        NavigationUI.setupActionBarWithNavController(this, navController, appBarConfiguration);
-        NavigationUI.setupWithNavController(binding.navView, navController);
+            // ONLY setup the action bar if it actually exists in your theme
+            if (getSupportActionBar() != null) {
+                NavigationUI.setupActionBarWithNavController(this, navController, appBarConfiguration);
+            }
+
+            // This part is safe because it uses the Bottom Nav View
+            NavigationUI.setupWithNavController(binding.navView, navController);
+        }
+        LinearLayout headlinesContainer = findViewById(R.id.txtSoceityHighlightsList);
+        HeadlineFetcher fetcher = new HeadlineFetcher(this, headlinesContainer);
+        fetcher.fetchHeadlines("https://www.thesubath.com");
     }
 }

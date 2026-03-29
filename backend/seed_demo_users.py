@@ -33,14 +33,14 @@ def hash_password(password: str) -> str:
     return f"{salt}${digest.hex()}"
 
 
-def badge_for_elo(elo: int) -> str:
-    if elo >= 1200:
+def badge_for_exp(exp_points: int) -> str:
+    if exp_points >= 1200:
         return "platinum"
-    if elo >= 1000:
+    if exp_points >= 1000:
         return "gold"
-    if elo >= 800:
+    if exp_points >= 800:
         return "silver"
-    if elo >= 500:
+    if exp_points >= 500:
         return "bronze"
     return "iron"
 
@@ -130,19 +130,19 @@ async def seed_demo_users(count: int) -> None:
                 if existing is not None:
                     continue
 
-                elo = random.randint(350, 1300)
-                badge_tier = badge_for_elo(elo)
+                exp_points = random.randint(350, 1300)
+                badge_tier = badge_for_exp(exp_points)
 
                 user_id = await conn.fetchval(
                     """
-                    INSERT INTO users (email, name, hashed_password, elo_score, badge_tier)
+                    INSERT INTO users (email, name, hashed_password, exp_points, badge_tier)
                     VALUES ($1, $2, $3, $4, $5)
                     RETURNING id
                     """,
                     email,
                     full_name,
                     password_hash,
-                    elo,
+                    exp_points,
                     badge_tier,
                 )
 

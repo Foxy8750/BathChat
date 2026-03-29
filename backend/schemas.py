@@ -26,7 +26,7 @@ class UserRead(BaseModel):
     id: int
     email: str
     name: str
-    elo_score: int
+    exp_points: int
     badge_tier: str
 
     model_config = {"from_attributes": True}
@@ -50,15 +50,29 @@ class ProfileUpsert(BaseModel):
     bio: str | None = None
 
 
+class IcebreakerProfile(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    interests: list[str] = Field(default_factory=list)
+    course: str | None = Field(default=None, max_length=120)
+    spoken_language: str | None = Field(default=None, max_length=120)
+    societies: list[str] = Field(default_factory=list)
+    goals: str | None = None
+    bio: str | None = None
+
+class MatchRequest(BaseModel):
+    student_a: IcebreakerProfile
+    student_b: IcebreakerProfile
+
+
 class ProfileBase(ProfileUpsert):
     pass
 
 
 class ProfileRead(ProfileBase):
     user_id: int
-    elo_score: int
+    exp_points: int
     badge_tier: str
-    elo_rank: int
+    exp_rank: int
 
     model_config = {"from_attributes": True}
 
@@ -114,7 +128,7 @@ class ChatMessageRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class EloLogRead(BaseModel):
+class ExpLogRead(BaseModel):
     id: int
     user_id: int
     points: int
@@ -124,13 +138,18 @@ class EloLogRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class TopEloHolderRead(BaseModel):
+class TopExpHolderRead(BaseModel):
     user_id: int
     name: str
-    elo_score: int
+    exp_points: int
     badge_tier: str
-    elo_rank: int
+    exp_rank: int
 
 
-class TopEloLeaderboardResponse(BaseModel):
-    top_holders: list[TopEloHolderRead]
+class TopExpLeaderboardResponse(BaseModel):
+    top_holders: list[TopExpHolderRead]
+
+
+class UserXPResponse(BaseModel):
+    user_id: int
+    total_xp: int
