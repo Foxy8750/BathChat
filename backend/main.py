@@ -8,14 +8,15 @@ from typing import Iterable
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import and_, or_, select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from google import genai
 from google.genai import types
+from backend.exp import award_xp
 
 from backend.database import Base, engine, get_db
-from backend.models import Match, Profile, User
+from backend.models import Match, Profile, User, FriendRequest, Chat, Message, EloLog
 from backend.schemas import AIMatchData, MatchRead, ProfileRead, ProfileUpsert, TokenResponse, UserCreate, UserLogin, UserRead
 
 load_dotenv()
@@ -105,9 +106,10 @@ async def on_startup() -> None:
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ethnicity VARCHAR(120)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS gender VARCHAR(60)"))
         await conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS spoken_language VARCHAR(120)"))
-        # Ensure users table has elo_score and badge_tier (defined in User model)
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS elo_score INTEGER NOT NULL DEFAULT 500"))
+        # Ensure users table has elo_points and badge_tier (defined in User model)
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS elo_points INTEGER NOT NULL DEFAULT 500"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS badge_tier VARCHAR(40) NOT NULL DEFAULT 'bronze'"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS elo_points INTEGER NOT NULL DEFAULT 0"))
         await conn.execute(
             text(
                 """
@@ -468,3 +470,146 @@ async def get_ai_match_data(user1_profile: Profile, user2_profile: Profile) -> A
         reason=reason,
         icebreaker=icebreaker,
     )
+
+
+@app.post("/messages/send")
+async def send_message(
+    recipient_id: int,
+    content: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    recipient = await db.get(User, recipient_id)
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+
+    if len(content.strip()) >= 10:
+        await award_xp(db, current_user, 1)
+
+    return {
+        "detail": "Message sent",
+        "elo_score": current_user.elo_score,
+        "badge_tier": current_user.badge_tier,
+    }
+
+@app.post("/friends/request/{request_id}/accept")
+async def accept_friend_request(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(FriendRequest).where(FriendRequest.id == request_id)
+    )
+    request = result.scalar_one_or_none()
+
+    if not request:
+        raise HTTPException(status_code=404, detail="Friend request not found")
+
+    if request.receiver_id != current_user.id:
+        print(f"DEBUG: User {current_user.id} attempted to accept friend request {request_id} intended for {request.receiver_id}")
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    if request.status == "accepted":
+        raise HTTPException(status_code=400, detail="Already accepted")
+
+    request.status = "accepted"
+    chat = Chat(
+        user1_id=request.sender_id,
+        user2_id=request.receiver_id,
+    )
+    db.add(chat)
+    await db.commit()
+    
+    sender = await db.get(User, request.sender_id)
+    receiver = await db.get(User, request.receiver_id)
+
+    await award_xp(db, sender, 5)
+    await award_xp(db, receiver, 1)
+
+    return {"detail": "Friend request accepted"}
+
+@app.post("/friends/request/{receiver_id}")
+async def send_friend_request(
+    receiver_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if receiver_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot friend yourself")
+
+    receiver = await db.get(User, receiver_id)
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+
+    existing = await db.execute(
+        select(FriendRequest).where(
+            or_(
+                and_(
+                    FriendRequest.sender_id == current_user.id,
+                    FriendRequest.receiver_id == receiver_id,
+                ),
+                and_(
+                    FriendRequest.sender_id == receiver_id,
+                    FriendRequest.receiver_id == current_user.id,
+                ),
+            )
+        )
+    )
+    old_request = existing.scalar_one_or_none()
+
+    if old_request:
+        raise HTTPException(status_code=400, detail="Friend request already exists")
+
+    request = FriendRequest(
+        sender_id=current_user.id,
+        receiver_id=receiver_id,
+        status="pending",
+    )
+    db.add(request)
+    await db.commit()
+    await db.refresh(request)
+
+    return {"detail": "Friend request sent", "request_id": request.id}
+
+
+@app.post("/chats/{chat_id}/messages")
+async def send_message(
+    chat_id: int,
+    content: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    chat = await db.get(Chat, chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    if current_user.id not in [chat.user1_id, chat.user2_id]:
+        raise HTTPException(status_code=403, detail="Not part of this chat")
+
+    result = await db.execute(
+        select(func.count(Message.id)).where(Message.chat_id == chat_id)
+    )
+    message_count = result.scalar_one()
+
+    message = Message(
+        chat_id=chat_id,
+        sender_id=current_user.id,
+        content=content,
+        message_type="text",
+    )
+    db.add(message)
+    await db.commit()
+    await db.refresh(message)
+
+    if message_count == 0 and len(content.strip()) >= 10:
+        await award_xp(db, current_user, 5)
+
+    return {"detail": "Message sent", "message_id": message.id}
+
+
+
+
+
+
+
