@@ -29,4 +29,15 @@
         android:label="My Stats"
         tools:layout="@layout/profile" />
 
+
+    <fragment
+        android:id="@+id/navigation_settings"
+        android:name="com.example.bathchat.ui.profile.SettingsFragment"
+        android:label="Settings"
+        app:enterAnim="@anim/nav_default_enter_anim"
+        app:exitAnim="@anim/nav_default_exit_anim"
+        app:popEnterAnim="@anim/nav_default_pop_enter_anim"
+        app:popExitAnim="@anim/nav_default_pop_exit_anim"
+        app:layout="@layout/settings" />
+
 </navigation>
